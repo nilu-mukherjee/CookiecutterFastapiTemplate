@@ -15,7 +15,12 @@ FLAGS: dict[str, object] = json.loads(r"""{{ cookiecutter | jsonify }}""")
 #   key: a tuple of flag names      -> paths removed when ANY listed flag is "n"
 #                                      (dependent-flag case, e.g. a path needing
 #                                      both use_auth and use_rbac)
-PRUNE: dict[str | tuple[str, ...], list[str]] = {
+#   a nested tuple inside a tuple    -> an any-of group, "off" only when EVERY
+#                                      member is "n" (code shared by several
+#                                      methods, e.g. JWT for Bearer or cookie)
+Key = str | tuple[str | tuple[str, ...], ...]
+JWT_METHODS = ("use_auth_jwt_bearer", "use_auth_jwt_cookie")
+PRUNE: dict[Key, list[str]] = {
     "use_docker": ["Dockerfile", "docker-compose.yml", ".dockerignore"],
     "use_github_actions": [".github"],
     "use_redis": [
@@ -34,16 +39,26 @@ PRUNE: dict[str | tuple[str, ...], list[str]] = {
         "alembic/versions/0002_auth.py",
         "tests/auth",
     ],
-    ("use_auth", "use_auth_jwt_bearer"): [
-        "app/core/auth/jwt_bearer.py",
+    # Shared by both JWT methods: token format, refresh tokens, login endpoints.
+    ("use_auth", JWT_METHODS): [
+        "app/core/auth/access_token.py",
         "app/models/refresh_token.py",
         "app/repositories/refresh_token.py",
         "app/services/auth.py",
         "app/schemas/v1/auth.py",
         "app/api/v1/endpoints/auth.py",
+    ],
+    ("use_auth", "use_auth_jwt_bearer"): [
+        "app/core/auth/jwt_bearer.py",
         "tests/auth/test_jwt_bearer.py",
         # Uses Bearer tokens for its principals until other methods exist.
         "tests/auth/test_users.py",
+    ],
+    ("use_auth", "use_auth_jwt_cookie"): [
+        "app/core/auth/jwt_cookie.py",
+        "app/core/auth/cookies.py",
+        "app/core/auth/csrf.py",
+        "tests/auth/test_jwt_cookie.py",
     ],
 }
 
@@ -55,9 +70,12 @@ def remove(path: Path) -> None:
         path.unlink()
 
 
-def is_off(key: str | tuple[str, ...]) -> bool:
+def is_off(key: Key) -> bool:
     keys = (key,) if isinstance(key, str) else key
-    return any(FLAGS[k] == "n" for k in keys)
+    return any(
+        FLAGS[k] == "n" if isinstance(k, str) else all(FLAGS[g] == "n" for g in k)
+        for k in keys
+    )
 
 
 def main() -> None:

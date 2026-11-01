@@ -104,3 +104,44 @@ def test_auth_jwt_bearer_on_generates_auth_code(tmp_path):
     proj = tmp_path / "my_project"
     for rel in AUTH_PATHS:
         assert (proj / rel).exists(), rel
+
+
+JWT_SHARED_PATHS = [
+    "app/models/refresh_token.py", "app/repositories/refresh_token.py",
+    "app/services/auth.py", "app/schemas/v1/auth.py", "app/api/v1/endpoints/auth.py",
+    "app/core/auth/access_token.py",
+]
+COOKIE_PATHS = [
+    "app/core/auth/jwt_cookie.py", "app/core/auth/csrf.py", "app/core/auth/cookies.py",
+    "tests/auth/test_jwt_cookie.py",
+]
+
+
+def test_auth_jwt_cookie_only_generates_shared_jwt_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="y",
+            use_auth_session="n", use_auth_api_key="n", use_auth_basic="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in JWT_SHARED_PATHS + COOKIE_PATHS:
+        assert (proj / rel).exists(), rel
+    assert not (proj / "app/core/auth/jwt_bearer.py").exists()
+    assert not (proj / "tests/auth/test_jwt_bearer.py").exists()
+
+
+def test_auth_jwt_cookie_off_leaves_no_cookie_or_csrf_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session="n", use_auth_api_key="n", use_auth_basic="n",
+            use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in JWT_SHARED_PATHS:
+        assert (proj / rel).exists(), rel
+    for rel in COOKIE_PATHS:
+        assert not (proj / rel).exists(), rel
+    for path in proj.rglob("*"):
+        if path.is_file() and ".git" not in path.parts:
+            text = path.read_text(errors="ignore").lower()
+            # Code-level needles: the precedence-order comment may still name methods.
+            for needle in ("csrf", "cookie_", "_cookie", "cookies", "apikeycookie",
+                           "jwtcookie", "delivery"):
+                assert needle not in text, f"{needle!r} left in {path.relative_to(proj)}"

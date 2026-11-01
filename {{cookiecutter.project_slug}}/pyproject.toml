@@ -13,7 +13,7 @@ dependencies = [
     "argon2-cffi>=23.1",
     "email-validator>=2.1",
 {%- endif %}
-{%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_jwt_bearer == "y" %}
+{%- if cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") %}
     "pyjwt>=2.9",
 {%- endif %}
 {%- if cookiecutter.use_redis == "y" %}

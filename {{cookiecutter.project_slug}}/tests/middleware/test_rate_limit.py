@@ -1,15 +1,18 @@
+{%- set auth = cookiecutter.use_auth == "y" -%}
+{#- With auth on, ``client`` logs in first (one request), so use the anonymous one. -#}
+{%- set c = "anon_client" if auth else "client" -%}
 from httpx import AsyncClient
 
 from app.middleware.rate_limit import InMemoryRateLimiter
 
 
 async def test_rate_limit_returns_429_with_retry_after_on_121st_request(
-    client: AsyncClient,
+    {{ c }}: AsyncClient,
 ) -> None:
     for _ in range(120):
-        r = await client.get("/nope", headers={"X-Request-ID": "r"})
+        r = await {{ c }}.get("/nope", headers={"X-Request-ID": "r"})
         assert r.status_code == 404
-    r = await client.get("/nope", headers={"X-Request-ID": "rl-1"})
+    r = await {{ c }}.get("/nope", headers={"X-Request-ID": "rl-1"})
     assert r.status_code == 429
     assert int(r.headers["retry-after"]) >= 1
     body = r.json()
@@ -17,14 +20,14 @@ async def test_rate_limit_returns_429_with_retry_after_on_121st_request(
     assert body["request_id"] == "rl-1"
 
 
-async def test_health_exempt_from_rate_limit(client: AsyncClient) -> None:
+async def test_health_exempt_from_rate_limit({{ c }}: AsyncClient) -> None:
     for _ in range(130):
-        assert (await client.get("/health/live")).status_code == 200
+        assert (await {{ c }}.get("/health/live")).status_code == 200
 
 
-async def test_x_forwarded_for_not_trusted(client: AsyncClient) -> None:
+async def test_x_forwarded_for_not_trusted({{ c }}: AsyncClient) -> None:
     for i in range(121):
-        r = await client.get("/nope", headers={"X-Forwarded-For": f"10.0.0.{i}"})
+        r = await {{ c }}.get("/nope", headers={"X-Forwarded-For": f"10.0.0.{i}"})
     assert r.status_code == 429
 
 

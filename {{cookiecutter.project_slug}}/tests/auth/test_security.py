@@ -1,3 +1,4 @@
+{%- set cookie = cookiecutter.use_auth == "y" and cookiecutter.use_auth_jwt_cookie == "y" -%}
 from collections.abc import Iterator
 
 import pytest
@@ -46,7 +47,7 @@ def test_settings_reject_weak_secret_outside_dev() -> None:
         for weak in ("change-me", "short-secret"):
             with pytest.raises(ValidationError):
                 Settings(_env_file=None, environment=env, secret_key=weak)
-        Settings(_env_file=None, environment=env, secret_key=STRONG)
+        Settings(_env_file=None, environment=env, secret_key=STRONG{% if cookie %}, cookie_secure=True{% endif %})
     Settings(_env_file=None, environment="dev", secret_key="change-me")
 
 

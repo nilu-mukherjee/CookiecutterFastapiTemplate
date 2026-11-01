@@ -264,7 +264,7 @@ async def test_openapi_advertises_bearer_scheme(anon_client: AsyncClient) -> Non
     for version in ("v1", "v2"):
         schema = (await anon_client.get(f"/api/{version}/openapi.json")).json()
         schemes = schema["components"]["securitySchemes"]
-        assert {"type": "http", "scheme": "bearer"}.items() <= next(iter(schemes.values())).items()
+        assert {"type": "http", "scheme": "bearer"} in list(schemes.values())
         assert schema["paths"]["/items"]["get"]["security"]
 
 

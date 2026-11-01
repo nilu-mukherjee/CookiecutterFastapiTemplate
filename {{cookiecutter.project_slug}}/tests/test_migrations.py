@@ -15,7 +15,7 @@ EXPECTED_TABLES = {
 {%- if cookiecutter.use_auth == "y" %}
     "users",
 {%- endif %}
-{%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_jwt_bearer == "y" %}
+{%- if cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") %}
     "refresh_tokens",
 {%- endif %}
 }

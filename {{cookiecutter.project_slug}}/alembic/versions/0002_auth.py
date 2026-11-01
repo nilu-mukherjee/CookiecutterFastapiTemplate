@@ -1,5 +1,5 @@
-{%- set bearer = cookiecutter.use_auth_jwt_bearer == "y" -%}
-"""auth: users{% if bearer %} and refresh tokens{% endif %}
+{%- set use_jwt = (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
+"""auth: users{% if use_jwt %} and refresh tokens{% endif %}
 
 Revision ID: 0002
 Revises: 0001
@@ -25,7 +25,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_users_created_at", "users", ["created_at"])
     op.create_index("ix_users_email", "users", ["email"], unique=True)
-{%- if bearer %}
+{%- if use_jwt %}
     op.create_table(
         "refresh_tokens",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -49,7 +49,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-{%- if bearer %}
+{%- if use_jwt %}
     op.drop_index("ix_refresh_tokens_token_hash", table_name="refresh_tokens")
     op.drop_index("ix_refresh_tokens_user_id", table_name="refresh_tokens")
     op.drop_index("ix_refresh_tokens_created_at", table_name="refresh_tokens")

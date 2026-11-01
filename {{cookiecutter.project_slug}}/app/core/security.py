@@ -1,16 +1,16 @@
-{%- set bearer = cookiecutter.use_auth_jwt_bearer == "y" -%}
-"""Password hashing{% if bearer %}, access tokens (JWT) and refresh-token helpers{% endif %}."""
-{%- if bearer %}
+{%- set use_jwt = (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
+"""Password hashing{% if use_jwt %}, access tokens (JWT) and refresh-token helpers{% endif %}."""
+{%- if use_jwt %}
 import hashlib
 import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 {% endif %}
-{% if bearer %}import jwt
+{% if use_jwt %}import jwt
 {% endif %}from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-{%- if bearer %}
+{%- if use_jwt %}
 
 from app.core.config import get_settings
 {%- endif %}
@@ -35,7 +35,7 @@ def verify_password(password: str, hashed: str) -> bool:
         return _hasher.verify(hashed, password)
     except (VerificationError, InvalidHashError):
         return False
-{%- if bearer %}
+{%- if use_jwt %}
 
 
 # --- access tokens ------------------------------------------------------------

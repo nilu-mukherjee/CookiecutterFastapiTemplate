@@ -1,7 +1,7 @@
 """Import every model so Base.metadata is complete (Alembic, tests)."""
 from app.models.base import Base
 from app.models.item import Item
-{%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_jwt_bearer == "y" %}
+{%- if cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") %}
 from app.models.refresh_token import RefreshToken
 {%- endif %}
 {%- if cookiecutter.use_auth == "y" %}
@@ -11,7 +11,7 @@ from app.models.user import User
 __all__ = [
     "Base",
     "Item",
-{%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_jwt_bearer == "y" %}
+{%- if cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") %}
     "RefreshToken",
 {%- endif %}
 {%- if cookiecutter.use_auth == "y" %}

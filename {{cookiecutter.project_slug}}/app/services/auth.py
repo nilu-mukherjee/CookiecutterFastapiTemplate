@@ -1,4 +1,6 @@
+{%- set jwt_cookie = cookiecutter.use_auth_jwt_cookie == "y" -%}
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -17,6 +19,7 @@ logger = logging.getLogger("app.auth")
 
 @dataclass(frozen=True, slots=True)
 class IssuedTokens:
+    user_id: uuid.UUID
     access_token: str
     refresh_token: str
     expires_in: int
@@ -69,6 +72,16 @@ class AuthService:
         issued = await self._issue(user, now)
         await self.session.commit()
         return issued
+{%- if jwt_cookie %}
+
+    async def refresh_token_owner(self, refresh_token: str) -> uuid.UUID | None:
+        """User id of a refresh token in any state (None if never issued).
+
+        The cookie flow needs it to check the CSRF token before refresh/logout.
+        """
+        row = await self.tokens.get_by_hash(hash_token(refresh_token))
+        return row.user_id if row is not None else None
+{%- endif %}
 
     async def logout(self, refresh_token: str) -> None:
         """Revoke the refresh token. Idempotent: unknown or revoked tokens are ignored."""
@@ -82,4 +95,6 @@ class AuthService:
         await self.tokens.add(
             RefreshToken(user_id=user.id, token_hash=hash_token(raw), expires_at=now + lifetime)
         )
-        return IssuedTokens(access_token=access_token, refresh_token=raw, expires_in=expires_in)
+        return IssuedTokens(
+            user_id=user.id, access_token=access_token, refresh_token=raw, expires_in=expires_in
+        )

@@ -1,3 +1,4 @@
+{%- set cookie = cookiecutter.use_auth == "y" and cookiecutter.use_auth_jwt_cookie == "y" -%}
 from collections.abc import Callable
 
 import pytest
@@ -13,6 +14,9 @@ def make_app(monkeypatch: pytest.MonkeyPatch) -> Callable[..., FastAPI]:
     """Build an app after applying env overrides (settings are cached)."""
 
     def _make(**env: str) -> FastAPI:
+{%- if cookie %}
+        monkeypatch.setenv("COOKIE_SECURE", "true")  # required outside dev
+{%- endif %}
         for key, value in env.items():
             monkeypatch.setenv(key.upper(), value)
         get_settings.cache_clear()

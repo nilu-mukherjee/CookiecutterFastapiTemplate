@@ -1,9 +1,11 @@
 {%- set auth = cookiecutter.use_auth == "y" -%}
-{%- set bearer = auth and cookiecutter.use_auth_jwt_bearer == "y" -%}
+{%- set cookie_auth = auth and cookiecutter.use_auth_jwt_cookie == "y" -%}
+{%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
 from functools import lru_cache
 from typing import Literal
 
-{% if auth %}from pydantic import model_validator
+{% if cookie_auth %}from pydantic import field_validator, model_validator
+{% elif auth %}from pydantic import model_validator
 {% endif %}from pydantic_settings import BaseSettings, SettingsConfigDict
 {%- if auth %}
 
@@ -38,9 +40,24 @@ class Settings(BaseSettings):
     first_superuser_email: str | None = None
     first_superuser_password: str | None = None
 {%- endif %}
-{%- if bearer %}
+{%- if use_jwt %}
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+{%- endif %}
+{%- if cookie_auth %}
+    # Attributes of the auth cookies. Secure is mandatory outside dev (see below);
+    # Domain is only sent when set (host-only cookies by default).
+    cookie_secure: bool = False
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    cookie_domain: str | None = None
+{%- endif %}
+{%- if cookie_auth %}
+
+    @field_validator("cookie_domain", mode="before")
+    @classmethod
+    def _empty_domain_is_none(cls, value: object) -> object:
+        # COOKIE_DOMAIN= (empty) means "no Domain attribute", not Domain="".
+        return value or None
 {%- endif %}
 {%- if auth %}
 
@@ -53,6 +70,18 @@ class Settings(BaseSettings):
                 f"characters when ENVIRONMENT is {self.environment!r}"
             )
         return self
+{%- if cookie_auth %}
+
+    @model_validator(mode="after")
+    def _require_secure_cookies(self) -> "Settings":
+        if self.environment != "dev" and not self.cookie_secure:
+            raise ValueError(
+                f"COOKIE_SECURE must be true when ENVIRONMENT is {self.environment!r}"
+            )
+        if self.cookie_samesite == "none" and not self.cookie_secure:
+            raise ValueError("COOKIE_SAMESITE=none requires COOKIE_SECURE=true")
+        return self
+{%- endif %}
 {%- endif %}
 
 
