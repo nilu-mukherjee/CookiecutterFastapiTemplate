@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" -%}
 from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
@@ -5,16 +6,23 @@ from uuid import UUID
 from sqlalchemy import and_, or_, select
 
 from app.models.item import Item
-from app.repositories.base import BaseRepository
+from app.repositories.base import {% if tenancy %}TenantScopedRepository{% else %}BaseRepository{% endif %}
 
 
-class ItemRepository(BaseRepository[Item]):
+class ItemRepository({% if tenancy %}TenantScopedRepository{% else %}BaseRepository{% endif %}[Item]):
+{%- if tenancy %}
+    """Items of ONE tenant (see TenantScopedRepository)."""
+
+{%- endif %}
     model = Item
 
     async def list_after(
         self, limit: int, after: tuple[datetime, UUID] | None
     ) -> Sequence[Item]:
         stmt = select(Item).order_by(Item.created_at, Item.id).limit(limit)
+{%- if tenancy %}
+        stmt = self._scoped(stmt)
+{%- endif %}
         if after is not None:
             created_at, last_id = after
             stmt = stmt.where(

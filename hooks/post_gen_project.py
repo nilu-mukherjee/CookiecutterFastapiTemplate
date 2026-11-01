@@ -104,6 +104,15 @@ PRUNE: dict[Key, list[str]] = {
         "tests/rbac",
     ],
     ("use_auth", "use_rbac", "use_auth_api_key"): ["tests/rbac/test_rbac_api_key.py"],
+    ("use_auth", "use_multitenancy"): [
+        "app/models/tenant.py",
+        "app/repositories/tenant.py",
+        "app/services/tenant.py",
+        "app/schemas/v1/tenant.py",
+        "app/api/v1/endpoints/tenants.py",
+        "tests/tenancy",
+    ],
+    ("use_auth", "use_multitenancy", "use_rbac"): ["tests/tenancy/test_roles.py"],
     # Precedence between Bearer and the key/Basic methods needs Bearer and one of them.
     ("use_auth", "use_auth_jwt_bearer", ("use_auth_api_key", "use_auth_basic")): [
         "tests/auth/test_credential_precedence.py",

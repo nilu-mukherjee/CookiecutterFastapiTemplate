@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" -%}
 import base64
 import binascii
 from collections.abc import Sequence
@@ -27,9 +28,17 @@ def decode_cursor(cursor: str) -> tuple[datetime, UUID]:
 
 
 class ItemService:
+{%- if tenancy %}
+    """Items of ONE tenant: the caller's (``Principal.tenant_id``)."""
+
+    def __init__(self, session: AsyncSession, tenant_id: UUID) -> None:
+        self.session = session
+        self.repo = ItemRepository(session, tenant_id)
+{%- else %}
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = ItemRepository(session)
+{%- endif %}
 
     async def create(self, name: str, description: str | None = None) -> Item:
         item = await self.repo.add(Item(name=name, description=description))

@@ -1,9 +1,10 @@
 {%- set rbac = cookiecutter.use_rbac == "y" -%}
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 from collections.abc import Callable
 
 from httpx import AsyncClient
 
-from app.models import User
+from app.models import {% if tenancy %}Tenant, {% endif %}User
 from tests.conftest import MakeUser
 
 Headers = Callable[[User], dict[str, str]]
@@ -58,18 +59,31 @@ async def test_no_open_registration_route(anon_client: AsyncClient) -> None:
 
 
 async def test_only_superuser_can_list_users(
+{%- if tenancy %}
+    anon_client: AsyncClient,
+    client: AsyncClient,
+    make_user: MakeUser,
+    auth_headers: Headers,
+    system_tenant: Tenant,
+{%- else %}
     anon_client: AsyncClient, client: AsyncClient, make_user: MakeUser, auth_headers: Headers
+{%- endif %}
 ) -> None:
     assert (await client.get("/api/v1/users")).status_code == 403
     assert (await anon_client.get("/api/v1/users")).status_code == 401
     admin = auth_headers(await make_user("root@example.com", superuser=True))
     for i in range(3):
-        await make_user(f"u{i}@example.com")
+        await make_user(f"u{i}@example.com"{% if tenancy %}, tenant=system_tenant{% endif %})
     r = await anon_client.get("/api/v1/users", params={"limit": 2, "offset": 1}, headers=admin)
     assert r.status_code == 200
     body = r.json()
+{%- if tenancy %}
+    # root + 3 users of root's (system) tenant; member@example.com lives in another tenant
+    assert body["total"] == 4
+{%- else %}
     # member@example.com (client fixture) + root + 3 users
     assert body["total"] == 5
+{%- endif %}
     assert body["limit"] == 2
     assert body["offset"] == 1
     assert len(body["items"]) == 2

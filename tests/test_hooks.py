@@ -340,3 +340,54 @@ def test_rbac_with_api_key_includes_the_api_key_tests(tmp_path):
             use_rbac="y", use_social_login="n", use_multitenancy="n")
     assert r.returncode == 0, r.stderr
     assert (tmp_path / "my_project/tests/rbac/test_rbac_api_key.py").exists()
+
+
+TENANCY_PATHS = [
+    "app/models/tenant.py", "app/repositories/tenant.py", "app/services/tenant.py",
+    "app/schemas/v1/tenant.py", "app/api/v1/endpoints/tenants.py", "tests/tenancy",
+]
+# "tenant" covers TenantScopedRepository, TenantMixin, Tenant, tenant_id, tenants, ...;
+# the others are listed so a failure names the most specific leftover.
+TENANCY_NEEDLES = ("tenantscopedrepository", "tenantmixin", "tenant_id", "tenants",
+                   "use_multitenancy", "make_tenant", "client_b", "system_tenant",
+                   "allow_social_signup", "tenant")
+
+
+@pytest.mark.parametrize("rbac", ["y", "n"])
+def test_multitenancy_off_leaves_no_tenancy_code(tmp_path, rbac):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="y",
+            use_auth_session="y", use_auth_api_key="y", use_auth_basic="y",
+            use_social_login="y", use_rbac=rbac, use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in TENANCY_PATHS:
+        assert not (proj / rel).exists(), rel
+    scan(proj, TENANCY_NEEDLES)
+
+
+@pytest.mark.parametrize("rbac", ["y", "n"])
+def test_multitenancy_on_generates_tenancy_code(tmp_path, rbac):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session="n", use_auth_api_key="n", use_auth_basic="n",
+            use_social_login="n", use_rbac=rbac, use_multitenancy="y")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in TENANCY_PATHS:
+        assert (proj / rel).exists(), rel
+    assert (proj / "tests/tenancy/test_isolation.py").exists()
+    # Tenancy is folded into the existing revisions: no extra revision file.
+    versions = sorted(p.name for p in (proj / "alembic/versions").glob("*.py"))
+    expected = ["0001_initial.py", "0002_auth.py"] + (["0005_rbac.py"] if rbac == "y" else [])
+    assert versions == expected
+    # allow_social_signup exists only for social login (Task 11 consumes it).
+    assert "allow_social_signup" not in (proj / "app/models/tenant.py").read_text()
+
+
+def test_multitenancy_with_social_login_has_allow_social_signup(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_social_login="y",
+            use_rbac="n", use_multitenancy="y")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in ("app/models/tenant.py", "app/schemas/v1/tenant.py",
+                "alembic/versions/0001_initial.py"):
+        assert "allow_social_signup" in (proj / rel).read_text(), rel

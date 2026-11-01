@@ -1,10 +1,11 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 from uuid import uuid4
 
 from httpx import AsyncClient, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Permission, Role, User
+from app.models import Permission, Role, {% if tenancy %}Tenant, {% endif %}User
 from app.services.rbac import RbacService
 from tests.conftest import LoginClient, MakeUser
 
@@ -18,7 +19,7 @@ async def set_roles(
     maker: async_sessionmaker[AsyncSession], user: User, names: list[str]
 ) -> None:
     async with maker() as session:
-        await RbacService(session).set_user_roles(user.id, names)
+        await RbacService(session{% if tenancy %}, user.tenant_id{% endif %}).set_user_roles(user.id, names)
 
 
 async def make_role(
@@ -29,7 +30,15 @@ async def make_role(
         found = (
             await session.scalars(select(Permission).where(Permission.name.in_(permissions)))
         ).all()
+{%- if tenancy %}
+        # In the primary test tenant (``tenant`` fixture), where make_user puts users.
+        tenant_id = (
+            await session.scalars(select(Tenant.id).where(Tenant.slug == "tenant-a"))
+        ).one()
+        session.add(Role(name=name, permissions=list(found), tenant_id=tenant_id))
+{%- else %}
         session.add(Role(name=name, permissions=list(found)))
+{%- endif %}
         await session.commit()
 
 

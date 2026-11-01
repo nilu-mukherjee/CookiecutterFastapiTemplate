@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 {%- set use_jwt = (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
 """auth: users{% if use_jwt %} and refresh tokens{% endif %}
 
@@ -22,9 +23,15 @@ def upgrade() -> None:
         sa.Column("hashed_password", sa.String(255), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("is_superuser", sa.Boolean(), nullable=False),
+{%- if tenancy %}
+        sa.Column("tenant_id", sa.Uuid(), sa.ForeignKey("tenants.id"), nullable=False),
+{%- endif %}
     )
     op.create_index("ix_users_created_at", "users", ["created_at"])
     op.create_index("ix_users_email", "users", ["email"], unique=True)
+{%- if tenancy %}
+    op.create_index("ix_users_tenant_id", "users", ["tenant_id"])
+{%- endif %}
 {%- if use_jwt %}
     op.create_table(
         "refresh_tokens",
@@ -54,6 +61,9 @@ def downgrade() -> None:
     op.drop_index("ix_refresh_tokens_user_id", table_name="refresh_tokens")
     op.drop_index("ix_refresh_tokens_created_at", table_name="refresh_tokens")
     op.drop_table("refresh_tokens")
+{%- endif %}
+{%- if tenancy %}
+    op.drop_index("ix_users_tenant_id", table_name="users")
 {%- endif %}
     op.drop_index("ix_users_email", table_name="users")
     op.drop_index("ix_users_created_at", table_name="users")

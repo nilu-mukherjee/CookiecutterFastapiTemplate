@@ -1,5 +1,6 @@
 {%- set auth = cookiecutter.use_auth == "y" -%}
 {%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
+{%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
 {%- set redis = cookiecutter.use_redis == "y" -%}
 {%- set lifespan = auth or redis -%}
 {% if lifespan %}from collections.abc import AsyncIterator
@@ -18,6 +19,9 @@ from app.db.session import get_sessionmaker
 {%- if rbac %}
 from app.services.rbac import RbacService
 {%- endif %}
+{%- if tenancy %}
+from app.services.tenant import TenantService
+{%- endif %}
 from app.services.user import UserService
 {%- endif %}
 {%- if lifespan %}
@@ -27,10 +31,19 @@ from app.services.user import UserService
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 {%- if auth %}
     async with get_sessionmaker()() as session:
+{%- if tenancy %}
+        # The platform operator's tenant; the first superuser is created inside it.
+        system = await TenantService(session).ensure_system_tenant()
+{%- if rbac %}
+        await RbacService(session, system.id).ensure_default_roles()
+{%- endif %}
+        await UserService(session, system.id).bootstrap_superuser()
+{%- else %}
 {%- if rbac %}
         await RbacService(session).ensure_default_roles()
 {%- endif %}
         await UserService(session).bootstrap_superuser()
+{%- endif %}
 {%- endif %}
     yield
 {%- if redis %}

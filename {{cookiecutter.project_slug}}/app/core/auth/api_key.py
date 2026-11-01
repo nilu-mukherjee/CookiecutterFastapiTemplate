@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +28,9 @@ class ApiKeyAuthenticator:
         key, owner = found
         principal = Principal(
             user_id=owner.id,
-            tenant_id=None,
+{%- if tenancy %}
+            tenant_id=owner.tenant_id,
+{%- endif %}
             is_superuser=owner.is_superuser,
             auth_method="api_key",
         )

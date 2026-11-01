@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -36,8 +37,8 @@ async def test_api_key_follows_owner_role_changes_without_a_new_key(
     key = await make_api_key(owner)
     assert (await anon_client.get(ITEMS, headers=_x(key))).status_code == 200
     async with maker() as session:
-        await RbacService(session).set_user_roles(owner.id, [])
+        await RbacService(session{% if tenancy %}, owner.tenant_id{% endif %}).set_user_roles(owner.id, [])
     assert (await anon_client.get(ITEMS, headers=_x(key))).status_code == 403
     async with maker() as session:
-        await RbacService(session).set_user_roles(owner.id, ["admin"])
+        await RbacService(session{% if tenancy %}, owner.tenant_id{% endif %}).set_user_roles(owner.id, ["admin"])
     assert (await anon_client.get(USERS, headers=_x(key))).status_code == 200

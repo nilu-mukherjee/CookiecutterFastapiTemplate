@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 {%- set cookie = cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_cookie == "y" or cookiecutter.use_auth_session == "y") -%}
 from collections.abc import Iterator
 
@@ -10,10 +11,20 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import AppError
 from app.core.security import hash_password, verify_password
 from app.models import User
-from app.services.user import UserService
+{% if tenancy %}from app.services.tenant import TenantService
+{% endif %}from app.services.user import UserService
 from tests.conftest import MakeUser
 
 STRONG = "x" * 40
+{%- macro users(s) %}{% if tenancy %}(await system_users({{ s }})){% else %}UserService({{ s }}){% endif %}{% endmacro %}
+{%- if tenancy %}
+
+
+async def system_users(session: AsyncSession) -> UserService:
+    """The bootstrap superuser is created in the system tenant (as the lifespan does)."""
+    system = await TenantService(session).ensure_system_tenant()
+    return UserService(session, system.id)
+{%- endif %}
 
 
 @pytest.fixture
@@ -80,12 +91,12 @@ async def test_bootstrap_superuser_creates_once(
     monkeypatch.setenv("FIRST_SUPERUSER_PASSWORD", "bootstrap-password")
     get_settings.cache_clear()
     async with maker() as session:
-        created = await UserService(session).bootstrap_superuser()
+        created = await {{ users("session") }}.bootstrap_superuser()
     assert created is not None
     assert created.is_superuser
     assert created.email == "admin@example.com"
     async with maker() as session:
-        assert await UserService(session).bootstrap_superuser() is None
+        assert await {{ users("session") }}.bootstrap_superuser() is None
         users = (await session.scalars(select(User))).all()
     assert len(users) == 1
 
@@ -100,13 +111,13 @@ async def test_bootstrap_concurrent_loser_is_noop(
     monkeypatch.setenv("FIRST_SUPERUSER_PASSWORD", "bootstrap-password")
     get_settings.cache_clear()
     async with maker() as winner_session, maker() as loser_session:
-        loser = UserService(loser_session)
+        loser = {{ users("loser_session") }}
 
         async def not_found_yet(email: str) -> None:
             return None  # the loser checked before the winner committed
 
-        monkeypatch.setattr(loser.repo, "get_by_email", not_found_yet)
-        assert await UserService(winner_session).bootstrap_superuser() is not None
+        monkeypatch.setattr({% if tenancy %}loser.lookup, "get_by_email_global"{% else %}loser.repo, "get_by_email"{% endif %}, not_found_yet)
+        assert await {{ users("winner_session") }}.bootstrap_superuser() is not None
         # The loser now hits the real unique-index IntegrityError path.
         assert await loser.bootstrap_superuser() is None
     async with maker() as session:
@@ -124,13 +135,13 @@ async def test_bootstrap_other_errors_still_raise(
     get_settings.cache_clear()
     async with maker() as session:
         with pytest.raises(AppError) as exc:
-            await UserService(session).bootstrap_superuser()
+            await {{ users("session") }}.bootstrap_superuser()
     assert exc.value.code == "invalid_password"
 
     monkeypatch.setenv("FIRST_SUPERUSER_PASSWORD", "bootstrap-password")
     get_settings.cache_clear()
     async with maker() as session:
-        service = UserService(session)
+        service = {{ users("session") }}
 
         async def boom(*args: object, **kwargs: object) -> None:
             raise RuntimeError("db down")
@@ -148,5 +159,5 @@ async def test_bootstrap_superuser_noop_when_not_configured(
     monkeypatch.delenv("FIRST_SUPERUSER_EMAIL", raising=False)
     monkeypatch.delenv("FIRST_SUPERUSER_PASSWORD", raising=False)
     async with maker() as session:
-        assert await UserService(session).bootstrap_superuser() is None
+        assert await {{ users("session") }}.bootstrap_superuser() is None
         assert (await session.scalars(select(User))).all() == []

@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -5,9 +6,11 @@ from app.core.auth.base import Principal
 from app.core.auth.cookies import SESSION_COOKIE
 from app.core.auth.csrf import require_csrf
 from app.core.exceptions import AppError
-from app.repositories.user import UserRepository
+{% if tenancy %}from app.services.session import SessionService
+from app.services.user import UserAuthentication
+{% else %}from app.repositories.user import UserRepository
 from app.services.session import SessionService
-
+{% endif %}
 
 def _invalid_session() -> AppError:
     # No WWW-Authenticate: that challenge is Bearer-only.
@@ -25,8 +28,14 @@ class SessionAuthenticator:
         row = await service.resolve(raw)
         if row is None:
             raise _invalid_session()
+{%- if tenancy %}
+        # Load the user on every request so deactivating the user or the tenant takes
+        # effect immediately; None unless both are active.
+        user = await UserAuthentication(session).get_active(row.user_id)
+{%- else %}
         # Load the user on every request so deactivation takes effect immediately.
         user = await UserRepository(session).get(row.user_id)
+{%- endif %}
         if user is None or not user.is_active:
             await service.revoke(row)
             raise _invalid_session()
@@ -34,7 +43,9 @@ class SessionAuthenticator:
         require_csrf(request, user.id)
         principal = Principal(
             user_id=user.id,
-            tenant_id=None,
+{%- if tenancy %}
+            tenant_id=user.tenant_id,
+{%- endif %}
             is_superuser=user.is_superuser,
             auth_method="session",
         )

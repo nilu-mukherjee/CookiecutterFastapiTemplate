@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 import logging
 import uuid
 from collections.abc import Sequence
@@ -22,10 +23,20 @@ DEFAULT_ROLES: dict[str, tuple[str, ...]] = {
 
 
 class RbacService:
+{%- if tenancy %}
+    """Permissions are global; roles (and so role assignment) belong to ONE tenant."""
+
+    def __init__(self, session: AsyncSession, tenant_id: uuid.UUID) -> None:
+        self.session = session
+        self.tenant_id = tenant_id
+        self.permissions = PermissionRepository(session)
+        self.roles = RoleRepository(session, tenant_id)
+{%- else %}
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.permissions = PermissionRepository(session)
         self.roles = RoleRepository(session)
+{%- endif %}
 
     # --- seeding (idempotent, safe when several workers start at once) -----------------
 
@@ -44,6 +55,9 @@ class RbacService:
             logger.info("permissions already seeded by another process")
 
     async def ensure_default_roles(self) -> None:
+{%- if tenancy %}
+        """Create this tenant's missing default roles (each tenant has its own)."""
+{%- endif %}
         await self.ensure_permissions()
         by_name = {p.name: p for p in await self.permissions.get_by_names(PERMISSIONS)}
         for role_name, permission_names in DEFAULT_ROLES.items():
@@ -51,12 +65,33 @@ class RbacService:
                 continue
             try:
                 self.session.add(
+{%- if tenancy %}
+                    Role(
+                        name=role_name,
+                        permissions=[by_name[n] for n in permission_names],
+                        tenant_id=self.tenant_id,
+                    )
+{%- else %}
                     Role(name=role_name, permissions=[by_name[n] for n in permission_names])
+{%- endif %}
                 )
                 await self.session.commit()
             except IntegrityError:
                 await self.session.rollback()
                 logger.info("role %s already created by another process", role_name)
+{%- if tenancy %}
+
+    async def add_default_roles(self) -> None:
+        """Add the default roles to this (new, still uncommitted) tenant; the caller commits.
+
+        The permissions must already exist (seeded at startup).
+        """
+        by_name = {p.name: p for p in await self.permissions.get_by_names(PERMISSIONS)}
+        for role_name, permission_names in DEFAULT_ROLES.items():
+            await self.roles.add(
+                Role(name=role_name, permissions=[by_name[n] for n in permission_names])
+            )
+{%- endif %}
 
     # --- lookups -----------------------------------------------------------------------
 

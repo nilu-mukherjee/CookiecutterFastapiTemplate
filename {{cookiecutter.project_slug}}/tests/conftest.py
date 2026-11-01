@@ -6,6 +6,7 @@
 {%- set basic = auth and cookiecutter.use_auth_basic == "y" -%}
 {%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
 {%- set csrf = cookie or session -%}
+{%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
 {#- Basic-only login-less builds: the default client sends a real Basic header. -#}
 {%- set basic_client = basic and not (bearer or cookie or session) -%}
 {% if basic %}import base64
@@ -31,9 +32,10 @@ from sqlalchemy.pool import StaticPool
 {% endif %}{% if bearer %}from app.core.security import create_access_token
 {% endif %}from app.db.session import get_session
 from app.main import create_app
-{% if auth %}from app.models import Base, User
+{% if auth %}from app.models import Base, {% if tenancy %}Tenant, {% endif %}User
 {% if api_key %}from app.services.api_key import ApiKeyService
 {% endif %}{% if rbac %}from app.services.rbac import RbacService
+{% endif %}{% if tenancy %}from app.services.tenant import TenantService
 {% endif %}from app.services.user import UserService
 {% else %}from app.models import Base
 {% endif %}
@@ -44,7 +46,16 @@ async def maker() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
+{%- if tenancy %}
+    # The app does this at startup (lifespan); the tests' app is not started.
+    async with sessions() as session:
 {%- if rbac %}
+        system = await TenantService(session).ensure_system_tenant()
+        await RbacService(session, system.id).ensure_default_roles()
+{%- else %}
+        await TenantService(session).ensure_system_tenant()
+{%- endif %}
+{%- elif rbac %}
     # The app seeds these at startup (lifespan); the tests' app is not started.
     async with sessions() as session:
         await RbacService(session).ensure_default_roles()
@@ -66,13 +77,59 @@ def application(maker: async_sessionmaker[AsyncSession]) -> FastAPI:
     return app
 
 
-MakeUser = Callable[..., Awaitable[User]]
+{% if tenancy %}MakeTenant = Callable[..., Awaitable[Tenant]]
+
+
+@pytest.fixture
+def make_tenant(maker: async_sessionmaker[AsyncSession]) -> MakeTenant:
+    """Create a tenant{% if rbac %} (with its own default roles){% endif %} through the real TenantService."""
+
+    async def _make(name: str, *, active: bool = True) -> Tenant:
+        slug = "-".join(name.lower().split())
+        async with maker() as session:
+            return await TenantService(session).create_tenant(name, slug, is_active=active)
+
+    return _make
+
+
+@pytest_asyncio.fixture
+async def system_tenant(maker: async_sessionmaker[AsyncSession]) -> Tenant:
+    """The system tenant (created by ``maker``, as the lifespan does): superusers' home."""
+    async with maker() as session:
+        return await TenantService(session).ensure_system_tenant()
+
+
+@pytest_asyncio.fixture
+async def tenant(make_tenant: MakeTenant) -> Tenant:
+    """The primary test tenant: make_user's default, home of the ``client`` user."""
+    return await make_tenant("Tenant A")
+
+
+@pytest_asyncio.fixture
+async def tenant_b(make_tenant: MakeTenant) -> Tenant:
+    """A second tenant, home of the ``client_b`` user."""
+    return await make_tenant("Tenant B")
+
+
+{% endif %}MakeUser = Callable[..., Awaitable[User]]
 PASSWORD = "correct-horse-battery"
 
 
 @pytest.fixture
+{%- if tenancy %}
+def make_user(
+    maker: async_sessionmaker[AsyncSession], tenant: Tenant, system_tenant: Tenant
+) -> MakeUser:
+    """Create a user through the real UserService (argon2 hash, lowercased email).
+
+    The user lives in ``tenant`` (the primary test tenant) unless another is given; a
+    superuser defaults to the system tenant, the only place superusers can exist.
+    """
+    default_tenant = tenant
+{%- else %}
 def make_user(maker: async_sessionmaker[AsyncSession]) -> MakeUser:
     """Create a user through the real UserService (argon2 hash, lowercased email)."""
+{%- endif %}
 
     async def _make(
         email: str = "user@example.com",
@@ -83,9 +140,15 @@ def make_user(maker: async_sessionmaker[AsyncSession]) -> MakeUser:
 {%- if rbac %}
         roles: list[str] | None = None,
 {%- endif %}
+{%- if tenancy %}
+        tenant: Tenant | None = None,
+{%- endif %}
     ) -> User:
+{%- if tenancy %}
+        home = tenant or (system_tenant if superuser else default_tenant)
+{%- endif %}
         async with maker() as session:
-            return await UserService(session).create(
+            return await UserService(session{% if tenancy %}, home.id{% endif %}).create(
                 email,
                 password,
                 is_superuser=superuser,
@@ -298,6 +361,41 @@ async def client(
 {%- elif session %}
     # Real session login; sends the matching CSRF header by default.
     yield await make_session_client(user.email)
+{%- endif %}
+{%- if tenancy %}
+
+
+@pytest_asyncio.fixture
+async def client_b(
+    application: FastAPI,
+    make_user: MakeUser,
+    tenant_b: Tenant,
+{%- if bearer %}
+    auth_headers: Callable[[User], dict[str, str]],
+{%- elif cookie %}
+    make_cookie_client: MakeCookieClient,
+{%- elif session %}
+    make_session_client: MakeSessionClient,
+{%- endif %}
+) -> AsyncIterator[AsyncClient]:
+    """Like ``client`` (same method), but as a normal user of ``tenant_b``."""
+    user = await make_user("member-b@example.com", tenant=tenant_b)
+{%- if bearer or basic_client %}
+{%- if bearer %}
+    headers = auth_headers(user)
+{%- else %}
+    headers = basic_header(user.email)
+{%- endif %}
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="http://test", headers=headers) as c:
+        yield c
+{%- elif cookie %}
+    # Real cookie login; sends the matching CSRF header by default.
+    yield await make_cookie_client(user.email)
+{%- elif session %}
+    # Real session login; sends the matching CSRF header by default.
+    yield await make_session_client(user.email)
+{%- endif %}
 {%- endif %}
 {%- else %}
 

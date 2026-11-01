@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 import hashlib
 import secrets
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models.session import Session
 from app.repositories.session import SessionRepository
-from app.services.user import UserService
+from app.services.user import {% if tenancy %}UserAuthentication{% else %}UserService{% endif %}
 
 # last_seen_at is only rewritten when older than this: no write per request.
 TOUCH_INTERVAL = timedelta(seconds=60)
@@ -37,7 +38,7 @@ def _aware(value: datetime) -> datetime:
 class SessionService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self.users = UserService(session)
+        self.users = {% if tenancy %}UserAuthentication{% else %}UserService{% endif %}(session)
         self.repo = SessionRepository(session)
 
     async def login(self, email: str, password: str, presented: str | None) -> IssuedSession:

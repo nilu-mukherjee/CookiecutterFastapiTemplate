@@ -1,4 +1,5 @@
 {%- set rbac = cookiecutter.use_rbac == "y" -%}
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 from datetime import datetime
 from uuid import UUID
 
@@ -25,6 +26,9 @@ class UserRead(BaseModel):
     is_active: bool
     is_superuser: bool
     created_at: datetime
+{%- if tenancy %}
+    tenant_id: UUID
+{%- endif %}
 {%- if rbac %}
     # Filled by the endpoints (roles live in their own table).
     roles: list[str] = Field(default_factory=list)

@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 import hashlib
 import hmac
 import re
@@ -13,8 +14,9 @@ from app.core.exceptions import AppError
 from app.models.api_key import ApiKey
 from app.models.user import User
 from app.repositories.api_key import ApiKeyRepository
-from app.repositories.user import UserRepository
-
+{% if tenancy %}from app.services.user import UserAuthentication
+{% else %}from app.repositories.user import UserRepository
+{% endif %}
 MAX_ACTIVE_KEYS = 20
 # last_used_at is only rewritten when older than this: no write per request.
 TOUCH_INTERVAL = timedelta(seconds=60)
@@ -117,8 +119,14 @@ class ApiKeyService:
             return None
         if key.expires_at is not None and clock.utcnow() >= _aware(key.expires_at):
             return None
+{%- if tenancy %}
+        # Load the owner on every request so deactivating the owner or their tenant
+        # takes effect immediately; None unless both are active.
+        owner = await UserAuthentication(self.session).get_active(key.user_id)
+{%- else %}
         # Load the owner on every request so deactivation takes effect immediately.
         owner = await UserRepository(self.session).get(key.user_id)
+{%- endif %}
         if owner is None or not owner.is_active:
             return None
         return key, owner

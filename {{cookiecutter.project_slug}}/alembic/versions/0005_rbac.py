@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 {%- set previous = "0004" if cookiecutter.use_auth_api_key == "y" else ("0003" if cookiecutter.use_auth_session == "y" else "0002") -%}
 """rbac: roles and permissions
 
@@ -32,9 +33,18 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("name", sa.String(100), nullable=False),
+{%- if tenancy %}
+        sa.Column("tenant_id", sa.Uuid(), sa.ForeignKey("tenants.id"), nullable=False),
+        # Role names are unique per tenant, not globally.
+        sa.UniqueConstraint("tenant_id", "name", name="uq_roles_tenant_id_name"),
+{%- endif %}
     )
     op.create_index("ix_roles_created_at", "roles", ["created_at"])
+{%- if tenancy %}
+    op.create_index("ix_roles_tenant_id", "roles", ["tenant_id"])
+{%- else %}
     op.create_index("ix_roles_name", "roles", ["name"], unique=True)
+{%- endif %}
 
     op.create_table(
         "role_permissions",
@@ -76,7 +86,11 @@ def downgrade() -> None:
     op.drop_table("user_roles")
     op.drop_index("ix_role_permissions_permission_id", table_name="role_permissions")
     op.drop_table("role_permissions")
+{%- if tenancy %}
+    op.drop_index("ix_roles_tenant_id", table_name="roles")
+{%- else %}
     op.drop_index("ix_roles_name", table_name="roles")
+{%- endif %}
     op.drop_index("ix_roles_created_at", table_name="roles")
     op.drop_table("roles")
     op.drop_index("ix_permissions_name", table_name="permissions")

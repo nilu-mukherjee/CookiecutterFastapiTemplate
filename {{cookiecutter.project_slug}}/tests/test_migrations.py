@@ -1,18 +1,26 @@
+{%- set tenancy = cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" -%}
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from alembic import command
+from alembic.autogenerate import compare_metadata
 from alembic.config import Config
+from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine
 
 from app.core.config import get_settings
+from app.models import Base
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_TABLES = {
     "alembic_version",
     "items",
+{%- if tenancy %}
+    "tenants",
+{%- endif %}
 {%- if cookiecutter.use_auth == "y" %}
     "users",
 {%- endif %}
@@ -32,6 +40,16 @@ EXPECTED_TABLES = {
     "user_roles",
 {%- endif %}
 }
+{%- if tenancy %}
+# Tenant-owned tables: each has a non-null, indexed tenant_id referencing tenants.id.
+TENANT_OWNED = [
+    "items",
+    "users",
+{%- if cookiecutter.use_rbac == "y" %}
+    "roles",
+{%- endif %}
+]
+{%- endif %}
 # The newest revision that exists in this build (the chain skips pruned ones).
 EXPECTED_HEAD = "{{ '0005' if cookiecutter.use_auth == 'y' and cookiecutter.use_rbac == 'y' else '0004' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_api_key == 'y' else ('0003' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_session == 'y' else ('0002' if cookiecutter.use_auth == 'y' else '0001')) }}"
 
@@ -52,7 +70,31 @@ def _config() -> Config:
     return cfg
 
 
-def _tables(db: Path) -> set[str]:
+{% if tenancy %}def _columns(db: Path, table: str) -> dict[str, bool]:
+    """Column name -> NOT NULL."""
+    with sqlite3.connect(db) as conn:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r[1]: bool(r[3]) for r in rows}
+
+
+def _indexed_columns(db: Path, table: str) -> list[tuple[list[str], bool]]:
+    """(columns, unique) of every index on the table, constraint-backed ones included."""
+    with sqlite3.connect(db) as conn:
+        indexes = conn.execute(f"PRAGMA index_list({table})").fetchall()
+        return [
+            ([c[2] for c in conn.execute(f"PRAGMA index_info('{ix[1]}')").fetchall()], bool(ix[2]))
+            for ix in indexes
+        ]
+
+
+def _foreign_keys(db: Path, table: str) -> set[tuple[str, str, str]]:
+    """(column, referenced table, referenced column)."""
+    with sqlite3.connect(db) as conn:
+        rows = conn.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+    return {(r[3], r[2], r[4]) for r in rows}
+
+
+{% endif %}def _tables(db: Path) -> set[str]:
     with sqlite3.connect(db) as conn:
         rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     return {r[0] for r in rows}
@@ -63,6 +105,40 @@ def test_upgrade_head_and_downgrade_base_on_sqlite(sqlite_url: Path) -> None:
     assert _tables(sqlite_url) == EXPECTED_TABLES
     command.downgrade(_config(), "base")
     assert _tables(sqlite_url) == {"alembic_version"}
+{%- if tenancy %}
+
+
+def test_tenant_owned_tables_have_a_required_indexed_tenant_fk(sqlite_url: Path) -> None:
+    command.upgrade(_config(), "head")
+    assert {"id", "name", "slug", "is_active"} <= set(_columns(sqlite_url, "tenants"))
+    assert (["slug"], True) in _indexed_columns(sqlite_url, "tenants")
+    for table in TENANT_OWNED:
+        assert _columns(sqlite_url, table).get("tenant_id") is True, table
+        assert (["tenant_id"], False) in _indexed_columns(sqlite_url, table), table
+        assert ("tenant_id", "tenants", "id") in _foreign_keys(sqlite_url, table), table
+    # Email stays globally unique: login is by email alone.
+    assert (["email"], True) in _indexed_columns(sqlite_url, "users")
+{%- if cookiecutter.use_rbac == "y" %}
+    # Role names are unique per tenant only.
+    role_indexes = _indexed_columns(sqlite_url, "roles")
+    assert (["tenant_id", "name"], True) in role_indexes
+    assert (["name"], True) not in role_indexes
+{%- endif %}
+    command.downgrade(_config(), "base")
+    assert _tables(sqlite_url) == {"alembic_version"}
+{%- endif %}
+
+
+def test_migrations_match_the_models(sqlite_url: Path) -> None:
+    """``alembic upgrade head`` builds exactly the schema the models declare."""
+    command.upgrade(_config(), "head")
+    engine = create_engine(f"sqlite:///{sqlite_url}")
+    try:
+        with engine.connect() as conn:
+            diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+    finally:
+        engine.dispose()
+    assert diff == []
 
 
 def test_migration_history_is_linear_with_a_single_head() -> None:

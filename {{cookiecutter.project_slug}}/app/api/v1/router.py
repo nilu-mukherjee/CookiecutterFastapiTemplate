@@ -2,12 +2,14 @@
 {#- /auth/login and /auth/logout exist for the JWT methods and for sessions. -#}
 {%- set api_key = auth and cookiecutter.use_auth_api_key == "y" -%}
 {%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
+{%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
 {%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y" or cookiecutter.use_auth_session == "y") -%}
 {%- set modules = [] -%}
 {%- if api_key %}{% set _ = modules.append("api_keys") %}{% endif -%}
 {%- if use_jwt %}{% set _ = modules.append("auth") %}{% endif -%}
 {%- set _ = modules.append("items") -%}
 {%- if rbac %}{% set _ = modules.append("roles") %}{% endif -%}
+{%- if tenancy %}{% set _ = modules.append("tenants") %}{% endif -%}
 {%- if auth %}{% set _ = modules.append("users") %}{% endif -%}
 from fastapi import APIRouter
 
@@ -26,4 +28,7 @@ router.include_router(roles.router)
 {%- endif %}
 {%- if api_key %}
 router.include_router(api_keys.router)
+{%- endif %}
+{%- if tenancy %}
+router.include_router(tenants.router)
 {%- endif %}

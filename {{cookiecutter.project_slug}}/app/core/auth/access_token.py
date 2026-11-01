@@ -1,11 +1,13 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 """Shared by the JWT methods: turn an access token into a Principal."""
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth.base import AuthMethod, Principal
 from app.core.exceptions import AppError
 from app.core.security import InvalidTokenError, decode_access_token
-from app.repositories.user import UserRepository
-
+{% if tenancy %}from app.services.user import UserAuthentication
+{% else %}from app.repositories.user import UserRepository
+{% endif %}
 
 def invalid_token(headers: dict[str, str] | None = None) -> AppError:
     return AppError(401, "invalid_credentials", "Invalid or expired token", headers=headers)
@@ -27,13 +29,21 @@ async def principal_from_access_token(
         claims = decode_access_token(token)
     except InvalidTokenError as exc:
         raise invalid_token(error_headers) from exc
+{%- if tenancy %}
+    # Load the user on every request so deactivating the user or the tenant takes
+    # effect immediately; None unless both are active.
+    user = await UserAuthentication(session).get_active(claims.user_id)
+{%- else %}
     # Load the user on every request so deactivation takes effect immediately.
     user = await UserRepository(session).get(claims.user_id)
+{%- endif %}
     if user is None or not user.is_active:
         raise invalid_token(error_headers)
     return Principal(
         user_id=user.id,
-        tenant_id=None,
+{%- if tenancy %}
+        tenant_id=user.tenant_id,
+{%- endif %}
         is_superuser=user.is_superuser,
         auth_method=auth_method,
     )

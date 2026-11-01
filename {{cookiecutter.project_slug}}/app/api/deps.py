@@ -5,6 +5,7 @@
 {%- set api_key = auth and cookiecutter.use_auth_api_key == "y" -%}
 {%- set basic = auth and cookiecutter.use_auth_basic == "y" -%}
 {%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
+{%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
 {%- set use_jwt = bearer or jwt_cookie -%}
 {%- set schemes = [] -%}
 {%- if bearer %}{% set _ = schemes.extend(["HTTPAuthorizationCredentials", "HTTPBearer"]) %}{% endif -%}
@@ -13,7 +14,8 @@
 {%- if basic %}{% set _ = schemes.extend(["HTTPBasic", "HTTPBasicCredentials"]) %}{% endif -%}
 {% if rbac %}from collections.abc import Awaitable, Callable
 {% endif %}from typing import Annotated
-
+{% if tenancy %}from uuid import UUID
+{% endif %}
 {% if schemes %}from fastapi import Depends, Request, Security
 {% set imported = schemes | sort | join(", ") %}{% if imported | length > 69 %}from fastapi.security import (
 {%- for name in schemes | sort %}
@@ -38,9 +40,11 @@
 {% endif %}from app.services.item import ItemService
 {% if rbac %}from app.services.rbac import RbacService
 {% endif %}{% if session %}from app.services.session import SessionService
+{% endif %}{% if tenancy %}from app.services.tenant import TenantService
 {% endif %}{% if auth %}from app.services.user import UserService
 {% endif %}
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+{%- if not tenancy %}
 
 
 def get_item_service(session: SessionDep) -> ItemService:
@@ -48,11 +52,13 @@ def get_item_service(session: SessionDep) -> ItemService:
 
 
 ItemServiceDep = Annotated[ItemService, Depends(get_item_service)]
+{%- endif %}
 {%- if cookiecutter.use_redis == "y" %}
 
 RedisDep = Annotated[Redis, Depends(get_redis)]
 {%- endif %}
 {%- if auth %}
+{%- if not tenancy %}
 
 
 def get_user_service(session: SessionDep) -> UserService:
@@ -60,6 +66,7 @@ def get_user_service(session: SessionDep) -> UserService:
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+{%- endif %}
 {%- if use_jwt %}
 
 
@@ -78,7 +85,7 @@ def get_api_key_service(session: SessionDep) -> ApiKeyService:
 
 ApiKeyServiceDep = Annotated[ApiKeyService, Depends(get_api_key_service)]
 {%- endif %}
-{%- if rbac %}
+{%- if rbac and not tenancy %}
 
 
 def get_rbac_service(session: SessionDep) -> RbacService:
@@ -186,6 +193,50 @@ async def require_superuser(principal: CurrentPrincipal) -> Principal:
 
 
 SuperuserPrincipal = Annotated[Principal, Depends(require_superuser)]
+{%- if tenancy %}
+
+
+def get_tenant_id(principal: CurrentPrincipal) -> UUID:
+    """The request's tenant: the authenticated user's tenant, from the database row.
+
+    Never taken from a header, query string, body, path or token claim. Services and
+    repositories receive it explicitly; nothing filters implicitly behind their back.
+    """
+    return principal.tenant_id
+
+
+TenantId = Annotated[UUID, Depends(get_tenant_id)]
+
+
+def get_item_service(session: SessionDep, tenant_id: TenantId) -> ItemService:
+    return ItemService(session, tenant_id)
+
+
+ItemServiceDep = Annotated[ItemService, Depends(get_item_service)]
+
+
+def get_user_service(session: SessionDep, tenant_id: TenantId) -> UserService:
+    return UserService(session, tenant_id)
+
+
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+{%- if rbac %}
+
+
+def get_rbac_service(session: SessionDep, tenant_id: TenantId) -> RbacService:
+    return RbacService(session, tenant_id)
+
+
+RbacServiceDep = Annotated[RbacService, Depends(get_rbac_service)]
+{%- endif %}
+
+
+def get_tenant_service(session: SessionDep) -> TenantService:
+    return TenantService(session)
+
+
+TenantServiceDep = Annotated[TenantService, Depends(get_tenant_service)]
+{%- endif %}
 {%- if rbac %}
 
 

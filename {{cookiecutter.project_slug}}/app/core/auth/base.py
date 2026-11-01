@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 {%- set methods = [] -%}
 {%- if cookiecutter.use_auth_jwt_bearer == "y" %}{% set _ = methods.append("bearer") %}{% endif -%}
 {%- if cookiecutter.use_auth_api_key == "y" %}{% set _ = methods.append("api_key") %}{% endif -%}
@@ -20,7 +21,11 @@ class Principal:
     """Who is making the request, whatever method authenticated them."""
 
     user_id: UUID
-    tenant_id: UUID | None
+{%- if tenancy %}
+    # The user's tenant, read from the user's database row on every request: the only
+    # source of the request's tenant (never a header, query, body or token claim).
+    tenant_id: UUID
+{%- endif %}
     is_superuser: bool
     # How the request authenticated; some actions refuse some methods
     # (an API key must not be able to mint more API keys).

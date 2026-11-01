@@ -1,9 +1,11 @@
+{%- set tenancy = cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" -%}
 from datetime import UTC, datetime
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.item import Item
+{% if tenancy %}from app.models import Tenant
+{% endif %}from app.models.item import Item
 
 
 async def test_v2_items_cursor_pagination_walks_all_pages(client: AsyncClient) -> None:
@@ -70,11 +72,22 @@ async def test_v2_patch_null_description_clears_it(client: AsyncClient) -> None:
 
 
 async def test_v2_cursor_tie_break_with_identical_created_at(
+{%- if tenancy %}
+    client: AsyncClient, maker: async_sessionmaker[AsyncSession], tenant: Tenant
+{%- else %}
     client: AsyncClient, maker: async_sessionmaker[AsyncSession]
+{%- endif %}
 ) -> None:
     same = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     async with maker() as session:
+{%- if tenancy %}
+        # In the client user's tenant, so the client can see them.
+        session.add_all(
+            [Item(name=f"t-{i}", created_at=same, tenant_id=tenant.id) for i in range(7)]
+        )
+{%- else %}
         session.add_all([Item(name=f"t-{i}", created_at=same) for i in range(7)])
+{%- endif %}
         await session.commit()
 
     async def walk() -> list[str]:

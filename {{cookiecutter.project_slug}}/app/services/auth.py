@@ -1,4 +1,5 @@
 {%- set jwt_cookie = cookiecutter.use_auth_jwt_cookie == "y" -%}
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 import logging
 import uuid
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from app.core.security import create_access_token, generate_refresh_token, hash_
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.repositories.refresh_token import RefreshTokenRepository
-from app.services.user import UserService
+from app.services.user import {% if tenancy %}UserAuthentication{% else %}UserService{% endif %}
 
 logger = logging.getLogger("app.auth")
 
@@ -37,7 +38,7 @@ def _invalid_refresh() -> AppError:
 class AuthService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self.users = UserService(session)
+        self.users = {% if tenancy %}UserAuthentication{% else %}UserService{% endif %}(session)
         self.tokens = RefreshTokenRepository(session)
 
     async def login(self, email: str, password: str) -> IssuedTokens:
@@ -65,7 +66,12 @@ class AuthService:
                 await self.session.commit()
             raise _invalid_refresh()
         row = await self.tokens.get_by_hash(token_hash)
+{%- if tenancy %}
+        # None unless the user and their tenant are both still active.
+        user = await self.users.get_active(row.user_id) if row is not None else None
+{%- else %}
         user = await self.users.repo.get(row.user_id) if row is not None else None
+{%- endif %}
         if user is None or not user.is_active:
             await self.session.commit()  # keep the revocation
             raise _invalid_refresh()

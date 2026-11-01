@@ -1,3 +1,4 @@
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 import base64
 
 from fastapi import Request
@@ -7,7 +8,7 @@ from app.core.auth.base import Principal
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.core.security import MAX_PASSWORD_LENGTH
-from app.services.user import UserService
+from app.services.user import {% if tenancy %}UserAuthentication{% else %}UserService{% endif %}
 
 
 def _invalid() -> AppError:
@@ -43,12 +44,14 @@ class BasicAuthenticator:
         email, password = self._decode(encoded.strip())
         # The login endpoint's own check: dummy-hash timing for unknown emails, one
         # outcome for unknown / wrong password / inactive, email normalisation.
-        user = await UserService(session).authenticate(email, password)
+        user = await {% if tenancy %}UserAuthentication{% else %}UserService{% endif %}(session).authenticate(email, password)
         if user is None:
             raise _invalid()
         return Principal(
             user_id=user.id,
-            tenant_id=None,
+{%- if tenancy %}
+            tenant_id=user.tenant_id,
+{%- endif %}
             is_superuser=user.is_superuser,
             auth_method="basic",
         )
