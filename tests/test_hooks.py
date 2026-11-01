@@ -357,7 +357,9 @@ TENANCY_NEEDLES = ("tenantscopedrepository", "tenantmixin", "tenant_id", "tenant
 def test_multitenancy_off_leaves_no_tenancy_code(tmp_path, rbac):
     r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="y",
             use_auth_session="y", use_auth_api_key="y", use_auth_basic="y",
-            use_social_login="y", use_rbac=rbac, use_multitenancy="n")
+            use_social_login="y", use_rbac=rbac, use_multitenancy="n",
+            # The Celery example task takes an explicit tenant_id in every build.
+            use_celery="n", use_celery_beat="n", use_flower="n")
     assert r.returncode == 0, r.stderr
     proj = tmp_path / "my_project"
     for rel in TENANCY_PATHS:
@@ -490,3 +492,35 @@ def test_social_migration_chains_onto_the_newest_existing_revision(
     migration = (tmp_path / "my_project/alembic/versions/0006_social_accounts.py").read_text()
     assert f'down_revision = "{previous}"' in migration
     assert f"Revises: {previous}" in migration
+
+
+CELERY_NEEDLES = ("celery", "app/worker", "app.worker", "queue_unavailable", "example_task", "kombu")
+BEAT_NEEDLES = ("beat_schedule", "periodic_example", "periodic-example")
+
+
+def test_celery_off_leaves_no_celery_code(tmp_path):
+    r = gen(tmp_path, use_celery="n", use_celery_beat="n", use_flower="n", use_redis="y",
+            use_auth="y", use_auth_jwt_bearer="y", use_rbac="y", use_multitenancy="y")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    assert not (proj / "app/worker").exists()
+    assert not (proj / "tests/worker").exists()
+    scan(proj, CELERY_NEEDLES)
+
+
+def test_celery_on_generates_worker_code(tmp_path):
+    r = gen(tmp_path, use_celery="y", use_celery_beat="y")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in ("app/worker/celery_app.py", "app/worker/tasks/example.py",
+                "tests/worker/test_tasks.py", "tests/worker/test_beat.py"):
+        assert (proj / rel).exists(), rel
+
+
+def test_celery_without_beat_leaves_no_beat_code(tmp_path):
+    r = gen(tmp_path, use_celery="y", use_celery_beat="n", use_flower="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    assert (proj / "app/worker/celery_app.py").exists()
+    assert not (proj / "tests/worker/test_beat.py").exists()
+    scan(proj, BEAT_NEEDLES)

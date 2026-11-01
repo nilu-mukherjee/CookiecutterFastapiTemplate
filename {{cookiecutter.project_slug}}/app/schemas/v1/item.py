@@ -36,3 +36,9 @@ class ItemList(BaseModel):
     total: int
     limit: int
     offset: int
+{%- if cookiecutter.use_celery == "y" %}
+
+
+class TaskAccepted(BaseModel):
+    task_id: str
+{%- endif %}

@@ -1,15 +1,24 @@
 {%- set rbac = cookiecutter.use_auth == "y" and cookiecutter.use_rbac == "y" -%}
-from typing import Annotated
+{%- set tenancy = cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" -%}
+{%- set celery = cookiecutter.use_celery == "y" -%}
+{% if celery %}import logging
+{% endif %}from typing import Annotated
 from uuid import UUID
 
 {% if cookiecutter.use_auth == "y" %}from fastapi import APIRouter, Depends, Query, Response
-
-from app.api.deps import ItemServiceDep, get_current_principal{% if rbac %}, require_permission{% endif %}
 {% else %}from fastapi import APIRouter, Query, Response
+{% endif %}{% if celery %}from kombu.exceptions import OperationalError
+from starlette.concurrency import run_in_threadpool
+{% endif %}
+{% if cookiecutter.use_auth == "y" %}from app.api.deps import ItemServiceDep, {% if tenancy and celery %}TenantId, {% endif %}get_current_principal{% if rbac %}, require_permission{% endif %}
+{% else %}from app.api.deps import ItemServiceDep
+{% endif %}{% if celery %}from app.core.exceptions import AppError
+{% endif %}from app.schemas.v1.item import ItemCreate, ItemList, ItemRead, ItemUpdate{% if celery %}, TaskAccepted
+from app.worker.tasks.example import example_task
 
-from app.api.deps import ItemServiceDep
-{% endif %}from app.schemas.v1.item import ItemCreate, ItemList, ItemRead, ItemUpdate
-
+logger = logging.getLogger(__name__)
+{% else %}
+{% endif %}
 {% if cookiecutter.use_auth == "y" %}router = APIRouter(
     prefix="/items",
     tags=["items"],
@@ -57,3 +66,38 @@ async def update_item(item_id: UUID, body: ItemUpdate, service: ItemServiceDep) 
 async def delete_item(item_id: UUID, service: ItemServiceDep) -> Response:
     await service.delete(item_id)
     return Response(status_code=204)
+{%- if celery %}
+
+
+@router.post(
+    "/{item_id}/process",
+    response_model=TaskAccepted,
+    status_code=202{% if rbac %},
+    dependencies=WRITE{% endif %},
+)
+async def process_item(
+    item_id: UUID,
+    service: ItemServiceDep,
+{%- if tenancy %}
+    tenant_id: TenantId,
+{%- endif %}
+) -> TaskAccepted:
+    """Queue background processing of an item the caller can see (404 otherwise)."""
+    await service.get(item_id)
+    try:
+        # Blocking publish: keep it off the event loop. retry=False fails fast when the
+        # broker is down. Arguments are explicit and JSON-only: ids, never contents.
+        result = await run_in_threadpool(
+            example_task.apply_async,
+            kwargs={
+                "tenant_id": {% if tenancy %}str(tenant_id){% else %}None{% endif %},
+                "payload": {"item_id": str(item_id)},
+            },
+            retry=False,
+        )
+    except (OperationalError, OSError) as exc:
+        # Log the class only: the message can contain the broker URL and credentials.
+        logger.warning("task queue unavailable: %s", type(exc).__name__)
+        raise AppError(503, "queue_unavailable", "Task queue is unavailable") from exc
+    return TaskAccepted(task_id=result.id)
+{%- endif %}

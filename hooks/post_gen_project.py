@@ -31,6 +31,8 @@ PRUNE: dict[Key, list[str]] = {
         "app/middleware/rate_limit_redis.py",
         "tests/middleware/test_rate_limit_redis.py",
     ],
+    "use_celery": ["app/worker", "tests/worker"],
+    ("use_celery", "use_celery_beat"): ["tests/worker/test_beat.py"],
     "use_auth": [
         "app/core/auth",
         "app/core/security.py",

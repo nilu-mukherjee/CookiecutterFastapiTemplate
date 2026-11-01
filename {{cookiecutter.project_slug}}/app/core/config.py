@@ -40,6 +40,14 @@ class Settings(BaseSettings):
 {%- if cookiecutter.use_redis == "y" %}
     redis_url: str = "redis://localhost:6379/0"
 {%- endif %}
+{%- if cookiecutter.use_celery == "y" %}
+    celery_broker_url: str = "amqp://guest:guest@localhost:5672//"
+{%- if cookiecutter.use_redis == "y" %}
+    celery_result_backend: str = "redis://localhost:6379/1"
+{%- else %}
+    celery_result_backend: str = "rpc://"
+{%- endif %}
+{%- endif %}
 {%- if auth %}
     # Required, no default: signs tokens. Must be strong outside dev (see below).
     secret_key: str
