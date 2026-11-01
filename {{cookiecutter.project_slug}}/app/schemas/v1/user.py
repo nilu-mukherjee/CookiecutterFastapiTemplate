@@ -1,3 +1,4 @@
+{%- set rbac = cookiecutter.use_rbac == "y" -%}
 from datetime import datetime
 from uuid import UUID
 
@@ -10,6 +11,10 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
     is_superuser: bool = False
+{%- if rbac %}
+    # Role names to grant; ``[]`` creates a user with no permissions.
+    roles: list[str] = Field(default_factory=lambda: ["member"], max_length=50)
+{%- endif %}
 
 
 class UserRead(BaseModel):
@@ -20,6 +25,10 @@ class UserRead(BaseModel):
     is_active: bool
     is_superuser: bool
     created_at: datetime
+{%- if rbac %}
+    # Filled by the endpoints (roles live in their own table).
+    roles: list[str] = Field(default_factory=list)
+{%- endif %}
 
 
 class UserList(BaseModel):

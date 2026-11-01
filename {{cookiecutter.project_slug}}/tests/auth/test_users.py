@@ -1,3 +1,4 @@
+{%- set rbac = cookiecutter.use_rbac == "y" -%}
 from collections.abc import Callable
 
 from httpx import AsyncClient
@@ -29,7 +30,7 @@ async def test_only_superuser_can_create_users(
     assert (await anon_client.post("/api/v1/users", json=new)).status_code == 401
     forbidden = await client.post("/api/v1/users", json=new)
     assert forbidden.status_code == 403
-    assert forbidden.json()["code"] == "forbidden"
+    assert forbidden.json()["code"] == "{% if rbac %}permission_denied{% else %}forbidden{% endif %}"
 
     admin = auth_headers(await make_user("root@example.com", superuser=True))
     created = await anon_client.post("/api/v1/users", json=new, headers=admin)

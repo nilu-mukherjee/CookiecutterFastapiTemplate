@@ -1,3 +1,4 @@
+{%- set rbac = cookiecutter.use_rbac == "y" -%}
 import logging
 from collections.abc import Sequence
 from uuid import UUID
@@ -16,6 +17,9 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.repositories.user import UserRepository
+{%- if rbac %}
+from app.services.rbac import DEFAULT_ROLE, RbacService
+{%- endif %}
 
 logger = logging.getLogger("app.users")
 
@@ -24,6 +28,9 @@ class UserService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = UserRepository(session)
+{%- if rbac %}
+        self.rbac = RbacService(session)
+{%- endif %}
 
     async def create(
         self,
@@ -32,6 +39,9 @@ class UserService:
         *,
         is_superuser: bool = False,
         is_active: bool = True,
+{%- if rbac %}
+        roles: Sequence[str] | None = None,
+{%- endif %}
     ) -> User:
         if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
             raise AppError(
@@ -42,6 +52,11 @@ class UserService:
         email = email.strip().lower()
         if await self.repo.get_by_email(email) is not None:
             raise AppError(409, "email_taken", "A user with this email already exists")
+{%- if rbac %}
+        # Before the insert: unknown roles must not leave a user behind, and re-seeding a
+        # missing default role commits.
+        role_objs = await self.rbac.resolve_roles([DEFAULT_ROLE] if roles is None else roles)
+{%- endif %}
         user = User(
             email=email,
             hashed_password=hash_password(password),
@@ -50,6 +65,9 @@ class UserService:
         )
         try:
             await self.repo.add(user)
+{%- if rbac %}
+            await self.rbac.assign(user.id, role_objs)
+{%- endif %}
             await self.session.commit()
         except IntegrityError as exc:  # lost a race on the unique email index
             await self.session.rollback()
@@ -88,7 +106,14 @@ class UserService:
         if await self.repo.get_by_email(email) is not None:
             return None
         try:
-            return await self.create(email, password, is_superuser=True)
+            return await self.create(
+                email,
+                password,
+                is_superuser=True,
+{%- if rbac %}
+                roles=["admin"],
+{%- endif %}
+            )
         except AppError as exc:
             if exc.code != "email_taken":
                 raise

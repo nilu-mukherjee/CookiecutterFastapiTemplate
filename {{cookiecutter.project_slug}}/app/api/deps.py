@@ -4,13 +4,15 @@
 {%- set session = auth and cookiecutter.use_auth_session == "y" -%}
 {%- set api_key = auth and cookiecutter.use_auth_api_key == "y" -%}
 {%- set basic = auth and cookiecutter.use_auth_basic == "y" -%}
+{%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
 {%- set use_jwt = bearer or jwt_cookie -%}
 {%- set schemes = [] -%}
 {%- if bearer %}{% set _ = schemes.extend(["HTTPAuthorizationCredentials", "HTTPBearer"]) %}{% endif -%}
 {%- if jwt_cookie or session %}{% set _ = schemes.append("APIKeyCookie") %}{% endif -%}
 {%- if api_key %}{% set _ = schemes.append("APIKeyHeader") %}{% endif -%}
 {%- if basic %}{% set _ = schemes.extend(["HTTPBasic", "HTTPBasicCredentials"]) %}{% endif -%}
-from typing import Annotated
+{% if rbac %}from collections.abc import Awaitable, Callable
+{% endif %}from typing import Annotated
 
 {% if schemes %}from fastapi import Depends, Request, Security
 {% set imported = schemes | sort | join(", ") %}{% if imported | length > 69 %}from fastapi.security import (
@@ -34,7 +36,8 @@ from typing import Annotated
 {% if api_key %}from app.services.api_key import ApiKeyService
 {% endif %}{% if use_jwt %}from app.services.auth import AuthService
 {% endif %}from app.services.item import ItemService
-{% if session %}from app.services.session import SessionService
+{% if rbac %}from app.services.rbac import RbacService
+{% endif %}{% if session %}from app.services.session import SessionService
 {% endif %}{% if auth %}from app.services.user import UserService
 {% endif %}
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -74,6 +77,15 @@ def get_api_key_service(session: SessionDep) -> ApiKeyService:
 
 
 ApiKeyServiceDep = Annotated[ApiKeyService, Depends(get_api_key_service)]
+{%- endif %}
+{%- if rbac %}
+
+
+def get_rbac_service(session: SessionDep) -> RbacService:
+    return RbacService(session)
+
+
+RbacServiceDep = Annotated[RbacService, Depends(get_rbac_service)]
 {%- endif %}
 {%- if session %}
 
@@ -174,6 +186,37 @@ async def require_superuser(principal: CurrentPrincipal) -> Principal:
 
 
 SuperuserPrincipal = Annotated[Principal, Depends(require_superuser)]
+{%- if rbac %}
+
+
+def require_permission(name: str) -> Callable[..., Awaitable[Principal]]:
+    """Dependency factory: the request's principal must hold the permission.
+
+    Permissions belong to the user, whatever authenticated the request (Bearer, cookie,
+    session, API key, Basic): an API key has exactly its owner's permissions. They are read
+    from the database on each request, so a role change applies to the next request; the
+    result is memoised on ``request.state`` for that one request only. Superusers bypass.
+    """
+
+    async def dependency(
+        request: Request, principal: CurrentPrincipal, rbac: RbacServiceDep
+    ) -> Principal:
+        if principal.is_superuser:
+            return principal
+        granted: set[str] | None = getattr(request.state, "permissions", None)
+        if granted is None:
+            granted = await rbac.permissions_for(principal.user_id)
+            request.state.permissions = granted
+        if name not in granted:
+            raise AppError(403, "permission_denied", f"Missing required permission: {name}")
+        return principal
+
+    return dependency
+
+
+UsersReader = Annotated[Principal, Depends(require_permission("users:read"))]
+UsersWriter = Annotated[Principal, Depends(require_permission("users:write"))]
+{%- endif %}
 {%- if api_key %}
 
 

@@ -279,3 +279,64 @@ def test_api_key_with_auth_off_is_ignored(tmp_path):
     assert r.returncode == 0, r.stderr
     assert "ignored" in (r.stdout + r.stderr)
     assert not (tmp_path / "my_project/app/models/api_key.py").exists()
+
+
+RBAC_PATHS = [
+    "app/models/permission.py", "app/models/role.py", "app/repositories/role.py",
+    "app/services/rbac.py", "app/schemas/v1/role.py", "app/api/v1/endpoints/roles.py",
+    "alembic/versions/0005_rbac.py", "tests/rbac",
+]
+RBAC_NEEDLES = ("require_permission", "rbacservice", "role_permissions", "permission_denied",
+                "use_rbac", "user_roles", "unknown_role", "cannot_modify_own_roles",
+                "app.models.role", "app.models.permission", "make_admin", "login_client")
+
+
+def test_rbac_off_leaves_no_rbac_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="y",
+            use_auth_session="y", use_auth_api_key="y", use_auth_basic="y",
+            use_social_login="n", use_rbac="n", use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in RBAC_PATHS:
+        assert not (proj / rel).exists(), rel
+    scan(proj, RBAC_NEEDLES)
+    # Without RBAC the users endpoints stay superuser-only.
+    users = (proj / "app/api/v1/endpoints/users.py").read_text()
+    assert "SuperuserPrincipal" in users
+    assert '"roles"' not in (proj / "app/schemas/v1/user.py").read_text()
+
+
+def test_rbac_on_generates_rbac_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_api_key="n",
+            use_rbac="y", use_social_login="n", use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in RBAC_PATHS:
+        if rel != "tests/rbac":
+            assert (proj / rel).exists(), rel
+    assert (proj / "tests/rbac/test_rbac.py").exists()
+    # The API-key scenarios exist only when API keys do.
+    assert not (proj / "tests/rbac/test_rbac_api_key.py").exists()
+
+
+@pytest.mark.parametrize(
+    ("session", "api_key", "previous"),
+    [("n", "n", "0002"), ("y", "n", "0003"), ("n", "y", "0004"), ("y", "y", "0004")],
+)
+def test_rbac_migration_chains_onto_the_newest_existing_revision(
+    tmp_path, session, api_key, previous
+):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session=session, use_auth_api_key=api_key, use_auth_basic="n",
+            use_social_login="n", use_rbac="y", use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    migration = (tmp_path / "my_project/alembic/versions/0005_rbac.py").read_text()
+    assert f'down_revision = "{previous}"' in migration
+    assert f"Revises: {previous}" in migration
+
+
+def test_rbac_with_api_key_includes_the_api_key_tests(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_api_key="y",
+            use_rbac="y", use_social_login="n", use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / "my_project/tests/rbac/test_rbac_api_key.py").exists()

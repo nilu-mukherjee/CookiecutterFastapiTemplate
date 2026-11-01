@@ -4,6 +4,7 @@
 {%- set session = auth and cookiecutter.use_auth_session == "y" -%}
 {%- set api_key = auth and cookiecutter.use_auth_api_key == "y" -%}
 {%- set basic = auth and cookiecutter.use_auth_basic == "y" -%}
+{%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
 {%- set csrf = cookie or session -%}
 {#- Basic-only login-less builds: the default client sends a real Basic header. -#}
 {%- set basic_client = basic and not (bearer or cookie or session) -%}
@@ -14,7 +15,8 @@
 os.environ["SECRET_KEY"] = "test-secret-key-not-for-production-" + "0123456789abcdef" * 4
 
 from collections.abc import AsyncIterator, Awaitable, Callable
-{% else %}from collections.abc import AsyncIterator
+{% if rbac %}from typing import Any
+{% endif %}{% else %}from collections.abc import AsyncIterator
 {% endif %}
 {% if cookiecutter.use_redis == "y" or auth %}import pytest
 {% endif %}import pytest_asyncio
@@ -31,6 +33,7 @@ from sqlalchemy.pool import StaticPool
 from app.main import create_app
 {% if auth %}from app.models import Base, User
 {% if api_key %}from app.services.api_key import ApiKeyService
+{% endif %}{% if rbac %}from app.services.rbac import RbacService
 {% endif %}from app.services.user import UserService
 {% else %}from app.models import Base
 {% endif %}
@@ -40,7 +43,13 @@ async def maker() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    yield async_sessionmaker(engine, expire_on_commit=False)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+{%- if rbac %}
+    # The app seeds these at startup (lifespan); the tests' app is not started.
+    async with sessions() as session:
+        await RbacService(session).ensure_default_roles()
+{%- endif %}
+    yield sessions
     await engine.dispose()
 {%- if auth %}
 
@@ -71,13 +80,34 @@ def make_user(maker: async_sessionmaker[AsyncSession]) -> MakeUser:
         *,
         superuser: bool = False,
         active: bool = True,
+{%- if rbac %}
+        roles: list[str] | None = None,
+{%- endif %}
     ) -> User:
         async with maker() as session:
             return await UserService(session).create(
-                email, password, is_superuser=superuser, is_active=active
+                email,
+                password,
+                is_superuser=superuser,
+                is_active=active,
+{%- if rbac %}
+                roles=roles,
+{%- endif %}
             )
 
     return _make
+{%- if rbac %}
+
+
+@pytest.fixture
+def make_admin(make_user: MakeUser) -> MakeUser:
+    """Create a (non-superuser) user holding the ``admin`` role."""
+
+    async def _make(email: str = "admin@example.com", **kwargs: Any) -> User:
+        return await make_user(email, roles=["admin"], **kwargs)
+
+    return _make
+{%- endif %}
 {%- if api_key %}
 
 
@@ -184,6 +214,48 @@ async def make_session_client(application: FastAPI) -> AsyncIterator[MakeSession
         return c
 
     yield _make
+    for c in clients:
+        await c.aclose()
+{%- endif %}
+{%- if rbac %}
+
+
+LoginClient = Callable[[User], Awaitable[AsyncClient]]
+
+
+@pytest_asyncio.fixture
+async def login_client(
+    application: FastAPI,
+{%- if bearer %}
+    auth_headers: Callable[[User], dict[str, str]],
+{%- elif cookie %}
+    make_cookie_client: MakeCookieClient,
+{%- elif session %}
+    make_session_client: MakeSessionClient,
+{%- endif %}
+) -> AsyncIterator[LoginClient]:
+    """Client authenticated as the given user through the build's first login method."""
+    clients: list[AsyncClient] = []
+
+    async def _login(user: User) -> AsyncClient:
+{%- if bearer or basic_client %}
+{%- if bearer %}
+        headers = auth_headers(user)
+{%- else %}
+        headers = basic_header(user.email)
+{%- endif %}
+        c = AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://test", headers=headers
+        )
+        clients.append(c)
+        return c
+{%- elif cookie %}
+        return await make_cookie_client(user.email)
+{%- else %}
+        return await make_session_client(user.email)
+{%- endif %}
+
+    yield _login
     for c in clients:
         await c.aclose()
 {%- endif %}

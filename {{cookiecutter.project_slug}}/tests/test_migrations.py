@@ -25,9 +25,15 @@ EXPECTED_TABLES = {
 {%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_api_key == "y" %}
     "api_keys",
 {%- endif %}
+{%- if cookiecutter.use_auth == "y" and cookiecutter.use_rbac == "y" %}
+    "permissions",
+    "roles",
+    "role_permissions",
+    "user_roles",
+{%- endif %}
 }
 # The newest revision that exists in this build (the chain skips pruned ones).
-EXPECTED_HEAD = "{{ '0004' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_api_key == 'y' else ('0003' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_session == 'y' else ('0002' if cookiecutter.use_auth == 'y' else '0001')) }}"
+EXPECTED_HEAD = "{{ '0005' if cookiecutter.use_auth == 'y' and cookiecutter.use_rbac == 'y' else '0004' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_api_key == 'y' else ('0003' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_session == 'y' else ('0002' if cookiecutter.use_auth == 'y' else '0001')) }}"
 
 
 @pytest.fixture

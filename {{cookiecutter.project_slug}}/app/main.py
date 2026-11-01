@@ -1,4 +1,5 @@
 {%- set auth = cookiecutter.use_auth == "y" -%}
+{%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
 {%- set redis = cookiecutter.use_redis == "y" -%}
 {%- set lifespan = auth or redis -%}
 {% if lifespan %}from collections.abc import AsyncIterator
@@ -14,6 +15,9 @@ from app.core.logging import configure_logging
 from app.core.middleware import register_middleware
 {%- if auth %}
 from app.db.session import get_sessionmaker
+{%- if rbac %}
+from app.services.rbac import RbacService
+{%- endif %}
 from app.services.user import UserService
 {%- endif %}
 {%- if lifespan %}
@@ -23,6 +27,9 @@ from app.services.user import UserService
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 {%- if auth %}
     async with get_sessionmaker()() as session:
+{%- if rbac %}
+        await RbacService(session).ensure_default_roles()
+{%- endif %}
         await UserService(session).bootstrap_superuser()
 {%- endif %}
     yield
