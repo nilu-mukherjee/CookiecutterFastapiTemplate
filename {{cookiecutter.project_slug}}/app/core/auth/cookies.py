@@ -1,3 +1,5 @@
+{%- set jwt_cookie = cookiecutter.use_auth_jwt_cookie == "y" -%}
+{%- set session = cookiecutter.use_auth_session == "y" -%}
 """Names and attributes of every auth cookie, in one place.
 
 Secure/SameSite/Domain come from settings; Domain is only sent when configured,
@@ -8,14 +10,16 @@ from fastapi import Response
 
 from app.core.config import get_settings
 
-ACCESS_COOKIE = "access_token"
+{% if jwt_cookie %}ACCESS_COOKIE = "access_token"
 REFRESH_COOKIE = "refresh_token"
-# Readable by JavaScript on purpose: the client echoes it in X-CSRF-Token.
+{% endif %}{% if session %}# Opaque server-side session id; only its hash is stored.
+SESSION_COOKIE = "session_id"
+{% endif %}# Readable by JavaScript on purpose: the client echoes it in X-CSRF-Token.
 CSRF_COOKIE = "csrf_token"
-
+{% if jwt_cookie %}
 # The refresh token is only ever sent to the auth endpoints.
 REFRESH_COOKIE_PATH = "/api/v1/auth"
-
+{% endif %}
 
 def set_cookie(
     response: Response,

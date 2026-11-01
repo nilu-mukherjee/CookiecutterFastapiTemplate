@@ -20,6 +20,9 @@ FLAGS: dict[str, object] = json.loads(r"""{{ cookiecutter | jsonify }}""")
 #                                      methods, e.g. JWT for Bearer or cookie)
 Key = str | tuple[str | tuple[str, ...], ...]
 JWT_METHODS = ("use_auth_jwt_bearer", "use_auth_jwt_cookie")
+COOKIE_METHODS = ("use_auth_jwt_cookie", "use_auth_session")
+# Methods that log in through /auth/login (JWT pairs, or a server-side session).
+LOGIN_METHODS = (*JWT_METHODS, "use_auth_session")
 PRUNE: dict[Key, list[str]] = {
     "use_docker": ["Dockerfile", "docker-compose.yml", ".dockerignore"],
     "use_github_actions": [".github"],
@@ -45,6 +48,9 @@ PRUNE: dict[Key, list[str]] = {
         "app/models/refresh_token.py",
         "app/repositories/refresh_token.py",
         "app/services/auth.py",
+    ],
+    # Login/logout endpoints and their schemas, shared by JWT and session methods.
+    ("use_auth", LOGIN_METHODS): [
         "app/schemas/v1/auth.py",
         "app/api/v1/endpoints/auth.py",
     ],
@@ -56,9 +62,21 @@ PRUNE: dict[Key, list[str]] = {
     ],
     ("use_auth", "use_auth_jwt_cookie"): [
         "app/core/auth/jwt_cookie.py",
+        "tests/auth/test_jwt_cookie.py",
+    ],
+    # Cookie names/attributes and CSRF are shared by every cookie method.
+    ("use_auth", COOKIE_METHODS): [
         "app/core/auth/cookies.py",
         "app/core/auth/csrf.py",
-        "tests/auth/test_jwt_cookie.py",
+    ],
+    ("use_auth", "use_auth_session"): [
+        "app/core/auth/session.py",
+        "app/core/time.py",
+        "app/models/session.py",
+        "app/repositories/session.py",
+        "app/services/session.py",
+        "alembic/versions/0003_sessions.py",
+        "tests/auth/test_session.py",
     ],
 }
 

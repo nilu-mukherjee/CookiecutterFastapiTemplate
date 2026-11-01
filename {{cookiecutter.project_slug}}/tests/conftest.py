@@ -1,6 +1,8 @@
 {%- set auth = cookiecutter.use_auth == "y" -%}
 {%- set bearer = auth and cookiecutter.use_auth_jwt_bearer == "y" -%}
 {%- set cookie = auth and cookiecutter.use_auth_jwt_cookie == "y" -%}
+{%- set session = auth and cookiecutter.use_auth_session == "y" -%}
+{%- set csrf = cookie or session -%}
 {% if auth %}import os
 
 # Settings are read when app.main is imported, so the test secret must be set first.
@@ -83,10 +85,12 @@ def auth_headers() -> Callable[[User], dict[str, str]]:
 
     return _headers
 {%- endif %}
-{%- if cookie %}
+{%- if csrf %}
 
 
 CSRF_HEADER = "X-CSRF-Token"
+{%- endif %}
+{%- if cookie %}
 MakeCookieClient = Callable[..., Awaitable[AsyncClient]]
 
 
@@ -117,6 +121,39 @@ async def make_cookie_client(application: FastAPI) -> AsyncIterator[MakeCookieCl
     for c in clients:
         await c.aclose()
 {%- endif %}
+{%- if session %}
+
+
+MakeSessionClient = Callable[..., Awaitable[AsyncClient]]
+
+
+@pytest_asyncio.fixture
+async def make_session_client(application: FastAPI) -> AsyncIterator[MakeSessionClient]:
+    """Log in through the real session login and return a client holding the cookies.
+
+    The client sends the matching ``X-CSRF-Token`` header on every request by
+    default; pass ``csrf_header=False`` to get one that does not (negative tests).
+    """
+    clients: list[AsyncClient] = []
+
+    async def _make(
+        email: str, password: str = PASSWORD, *, csrf_header: bool = True
+    ) -> AsyncClient:
+        c = AsyncClient(transport=ASGITransport(app=application), base_url="http://test")
+        clients.append(c)
+        r = await c.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": password, "delivery": "session"},
+        )
+        assert r.status_code == 200, r.text
+        if csrf_header:
+            c.headers[CSRF_HEADER] = r.json()["csrf_token"]
+        return c
+
+    yield _make
+    for c in clients:
+        await c.aclose()
+{%- endif %}
 
 
 @pytest_asyncio.fixture
@@ -135,6 +172,8 @@ async def client(
     auth_headers: Callable[[User], dict[str, str]],
 {%- elif cookie %}
     make_cookie_client: MakeCookieClient,
+{%- elif session %}
+    make_session_client: MakeSessionClient,
 {%- endif %}
 ) -> AsyncIterator[AsyncClient]:
     """Client authenticated as a normal (non-superuser) user."""
@@ -148,6 +187,9 @@ async def client(
 {%- elif cookie %}
     # Real cookie login; sends the matching CSRF header by default.
     yield await make_cookie_client(user.email)
+{%- elif session %}
+    # Real session login; sends the matching CSRF header by default.
+    yield await make_session_client(user.email)
 {%- endif %}
 {%- else %}
 

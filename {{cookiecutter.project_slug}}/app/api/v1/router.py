@@ -1,5 +1,6 @@
 {%- set auth = cookiecutter.use_auth == "y" -%}
-{%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
+{#- /auth/login and /auth/logout exist for the JWT methods and for sessions. -#}
+{%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y" or cookiecutter.use_auth_session == "y") -%}
 from fastapi import APIRouter
 
 {% if use_jwt %}from app.api.v1.endpoints import auth, items, users

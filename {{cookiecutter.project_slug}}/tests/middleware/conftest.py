@@ -1,4 +1,4 @@
-{%- set cookie = cookiecutter.use_auth == "y" and cookiecutter.use_auth_jwt_cookie == "y" -%}
+{%- set cookie = cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_cookie == "y" or cookiecutter.use_auth_session == "y") -%}
 from collections.abc import Callable
 
 import pytest

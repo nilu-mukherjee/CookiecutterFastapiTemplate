@@ -4,6 +4,9 @@ from app.models.item import Item
 {%- if cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") %}
 from app.models.refresh_token import RefreshToken
 {%- endif %}
+{%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_session == "y" %}
+from app.models.session import Session
+{%- endif %}
 {%- if cookiecutter.use_auth == "y" %}
 from app.models.user import User
 {%- endif %}
@@ -13,6 +16,9 @@ __all__ = [
     "Item",
 {%- if cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") %}
     "RefreshToken",
+{%- endif %}
+{%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_session == "y" %}
+    "Session",
 {%- endif %}
 {%- if cookiecutter.use_auth == "y" %}
     "User",

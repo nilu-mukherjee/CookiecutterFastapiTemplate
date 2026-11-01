@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from app.core.config import get_settings
 
@@ -17,6 +18,9 @@ EXPECTED_TABLES = {
 {%- endif %}
 {%- if cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") %}
     "refresh_tokens",
+{%- endif %}
+{%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_session == "y" %}
+    "sessions",
 {%- endif %}
 }
 
@@ -48,3 +52,11 @@ def test_upgrade_head_and_downgrade_base_on_sqlite(sqlite_url: Path) -> None:
     assert _tables(sqlite_url) == EXPECTED_TABLES
     command.downgrade(_config(), "base")
     assert _tables(sqlite_url) == {"alembic_version"}
+
+
+def test_migration_history_is_linear_with_a_single_head() -> None:
+    script = ScriptDirectory.from_config(_config())
+    assert len(script.get_heads()) == 1
+    # Every revision has exactly one parent: no branches, no merges.
+    for rev in script.walk_revisions():
+        assert not isinstance(rev.down_revision, tuple), rev.revision

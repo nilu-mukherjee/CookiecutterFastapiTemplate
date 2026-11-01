@@ -145,3 +145,41 @@ def test_auth_jwt_cookie_off_leaves_no_cookie_or_csrf_code(tmp_path):
             for needle in ("csrf", "cookie_", "_cookie", "cookies", "apikeycookie",
                            "jwtcookie", "delivery"):
                 assert needle not in text, f"{needle!r} left in {path.relative_to(proj)}"
+
+
+SESSION_PATHS = [
+    "app/core/auth/session.py", "app/core/time.py", "app/models/session.py",
+    "app/repositories/session.py", "app/services/session.py",
+    "alembic/versions/0003_sessions.py", "tests/auth/test_session.py",
+]
+
+
+def test_auth_session_only_generates_session_code_without_jwt_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="n",
+            use_auth_session="y", use_auth_api_key="n", use_auth_basic="n",
+            use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in SESSION_PATHS + ["app/core/auth/cookies.py", "app/core/auth/csrf.py",
+                                "app/schemas/v1/auth.py", "app/api/v1/endpoints/auth.py"]:
+        assert (proj / rel).exists(), rel
+    for rel in JWT_SHARED_PATHS[:3] + ["app/core/auth/jwt_cookie.py",
+                                       "app/core/auth/jwt_bearer.py"]:
+        assert not (proj / rel).exists(), rel
+
+
+def test_auth_session_off_leaves_no_session_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="y",
+            use_auth_session="n", use_auth_api_key="n", use_auth_basic="n",
+            use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in SESSION_PATHS:
+        assert not (proj / rel).exists(), rel
+    needles = ("session_idle", "session_absolute", "sessionservice", "sessionauthenticator",
+               "session_id", "session_cookie", "sessionlogin", "core.time", '"session"')
+    for path in proj.rglob("*"):
+        if path.is_file() and ".git" not in path.parts:
+            text = path.read_text(errors="ignore").lower()
+            for needle in needles:
+                assert needle not in text, f"{needle!r} left in {path.relative_to(proj)}"

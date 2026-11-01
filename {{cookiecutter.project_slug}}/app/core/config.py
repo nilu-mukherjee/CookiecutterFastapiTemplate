@@ -1,5 +1,7 @@
 {%- set auth = cookiecutter.use_auth == "y" -%}
-{%- set cookie_auth = auth and cookiecutter.use_auth_jwt_cookie == "y" -%}
+{%- set session_auth = auth and cookiecutter.use_auth_session == "y" -%}
+{#- Cookie attributes and their safety checks apply to every cookie-based method. -#}
+{%- set cookie_auth = auth and (cookiecutter.use_auth_jwt_cookie == "y" or session_auth) -%}
 {%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
 from functools import lru_cache
 from typing import Literal
@@ -43,6 +45,11 @@ class Settings(BaseSettings):
 {%- if use_jwt %}
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+{%- endif %}
+{%- if session_auth %}
+    # Sliding idle window and absolute cap of a login session.
+    session_idle_timeout_minutes: int = 30
+    session_absolute_lifetime_hours: int = 12
 {%- endif %}
 {%- if cookie_auth %}
     # Attributes of the auth cookies. Secure is mandatory outside dev (see below);

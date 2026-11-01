@@ -1,3 +1,5 @@
+{#- With auth on, ``client`` logs in first (one request), so use the anonymous one. -#}
+{%- set c = "anon_client" if cookiecutter.use_auth == "y" else "client" -%}
 import asyncio
 import logging
 
@@ -58,10 +60,10 @@ async def test_limiter_selection_uses_redis_when_enabled() -> None:
     assert isinstance(build_rate_limiter(), RedisRateLimiter)
 
 
-async def test_rate_limit_end_to_end_with_redis(client: AsyncClient) -> None:
+async def test_rate_limit_end_to_end_with_redis({{ c }}: AsyncClient) -> None:
     for _ in range(120):
-        assert (await client.get("/nope")).status_code == 404
-    r = await client.get("/nope")
+        assert (await {{ c }}.get("/nope")).status_code == 404
+    r = await {{ c }}.get("/nope")
     assert r.status_code == 429
     assert int(r.headers["retry-after"]) >= 1
 

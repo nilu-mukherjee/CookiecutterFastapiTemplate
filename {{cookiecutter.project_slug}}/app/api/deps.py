@@ -1,10 +1,11 @@
 {%- set auth = cookiecutter.use_auth == "y" -%}
 {%- set bearer = auth and cookiecutter.use_auth_jwt_bearer == "y" -%}
 {%- set jwt_cookie = auth and cookiecutter.use_auth_jwt_cookie == "y" -%}
+{%- set session = auth and cookiecutter.use_auth_session == "y" -%}
 {%- set use_jwt = bearer or jwt_cookie -%}
 {%- set schemes = [] -%}
 {%- if bearer %}{% set _ = schemes.extend(["HTTPAuthorizationCredentials", "HTTPBearer"]) %}{% endif -%}
-{%- if jwt_cookie %}{% set _ = schemes.insert(0, "APIKeyCookie") %}{% endif -%}
+{%- if jwt_cookie or session %}{% set _ = schemes.insert(0, "APIKeyCookie") %}{% endif -%}
 from typing import Annotated
 
 {% if schemes %}from fastapi import Depends, Request, Security
@@ -16,12 +17,13 @@ from fastapi.security import {{ schemes | join(", ") }}
 
 {% if cookiecutter.use_redis == "y" %}from app.cache.redis import get_redis
 {% endif %}{% if auth %}from app.core.auth import AUTHENTICATORS, Principal
-{% endif %}{% if jwt_cookie %}from app.core.auth.cookies import ACCESS_COOKIE
+{% endif %}{% if jwt_cookie or session %}from app.core.auth.cookies import {% if jwt_cookie %}ACCESS_COOKIE{% endif %}{% if jwt_cookie and session %}, {% endif %}{% if session %}SESSION_COOKIE{% endif %}
 {% endif %}{% if auth %}from app.core.exceptions import AppError
 {% endif %}from app.db.session import get_session
 {% if use_jwt %}from app.services.auth import AuthService
 {% endif %}from app.services.item import ItemService
-{% if auth %}from app.services.user import UserService
+{% if session %}from app.services.session import SessionService
+{% endif %}{% if auth %}from app.services.user import UserService
 {% endif %}
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -52,10 +54,26 @@ def get_auth_service(session: SessionDep) -> AuthService:
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 {%- endif %}
+{%- if session %}
+
+
+def get_session_service(session: SessionDep) -> SessionService:
+    return SessionService(session)
+
+
+SessionServiceDep = Annotated[SessionService, Depends(get_session_service)]
+{%- endif %}
 {%- if bearer %}
 
 # Only advertises the scheme in OpenAPI; JWTBearerAuthenticator does the checking.
 bearer_scheme = HTTPBearer(auto_error=False)
+{%- endif %}
+{%- if session %}
+
+# Only advertises the scheme in OpenAPI; SessionAuthenticator does the checking.
+# Named explicitly: OpenAPI keys schemes by name, and the class name would collide
+# with the JWT cookie scheme when both are enabled.
+session_scheme = APIKeyCookie(name=SESSION_COOKIE, scheme_name="SessionCookie", auto_error=False)
 {%- endif %}
 {%- if jwt_cookie %}
 
@@ -69,6 +87,9 @@ async def get_current_principal(
     session: SessionDep,
 {%- if bearer %}
     _bearer: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+{%- endif %}
+{%- if session %}
+    _session: Annotated[str | None, Security(session_scheme)],
 {%- endif %}
 {%- if jwt_cookie %}
     _cookie: Annotated[str | None, Security(cookie_scheme)],
