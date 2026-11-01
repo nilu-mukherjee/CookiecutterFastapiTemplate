@@ -1,5 +1,7 @@
 {%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
-{%- set cookie = cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_cookie == "y" or cookiecutter.use_auth_session == "y") -%}
+{#- Cookie settings (and their Secure-outside-dev rule) exist for the cookie methods and
+    for social login's state cookie. -#}
+{%- set cookie = cookiecutter.use_auth == "y" and (cookiecutter.use_auth_jwt_cookie == "y" or cookiecutter.use_auth_session == "y" or cookiecutter.use_social_login == "y") -%}
 from collections.abc import Iterator
 
 import pytest

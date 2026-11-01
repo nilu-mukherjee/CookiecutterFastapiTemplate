@@ -1,12 +1,16 @@
 {%- set auth = cookiecutter.use_auth == "y" -%}
 {%- set session_auth = auth and cookiecutter.use_auth_session == "y" -%}
-{#- Cookie attributes and their safety checks apply to every cookie-based method. -#}
-{%- set cookie_auth = auth and (cookiecutter.use_auth_jwt_cookie == "y" or session_auth) -%}
+{%- set social = auth and cookiecutter.use_social_login == "y" -%}
+{%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
+{#- Cookie attributes and their safety checks apply to every cookie-based method, and to
+    social login (its short-lived OAuth state cookie). -#}
+{%- set cookie_auth = auth and (cookiecutter.use_auth_jwt_cookie == "y" or session_auth or social) -%}
 {%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
 from functools import lru_cache
 from typing import Literal
 
-{% if cookie_auth %}from pydantic import field_validator, model_validator
+{% if social %}from pydantic import SecretStr, field_validator, model_validator
+{% elif cookie_auth %}from pydantic import field_validator, model_validator
 {% elif auth %}from pydantic import model_validator
 {% endif %}from pydantic_settings import BaseSettings, SettingsConfigDict
 {%- if auth %}
@@ -52,11 +56,34 @@ class Settings(BaseSettings):
     session_absolute_lifetime_hours: int = 12
 {%- endif %}
 {%- if cookie_auth %}
+{%- if social %}
+    # Attributes of the auth cookies and of the OAuth state cookie. Secure is mandatory
+    # outside dev (see below); Domain is only sent when set (host-only by default).
+{%- else %}
     # Attributes of the auth cookies. Secure is mandatory outside dev (see below);
     # Domain is only sent when set (host-only cookies by default).
+{%- endif %}
     cookie_secure: bool = False
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cookie_domain: str | None = None
+{%- endif %}
+{%- if social %}
+    # Social login. A provider is enabled only when both its id and secret are set;
+    # the secrets are SecretStr so they never appear in a repr, log line or error.
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    github_client_id: str | None = None
+    github_client_secret: SecretStr | None = None
+    # The callback is <base>/api/v1/oauth/<provider>/callback and must be registered
+    # with the provider verbatim. Never derived from the request's Host header.
+    oauth_redirect_base_url: str = "http://localhost:8000"
+    # Where a browser lands after a cookie/session social login. A constant: never
+    # taken from the request, so the callback cannot be turned into an open redirect.
+    oauth_success_redirect_url: str = "/"
+{%- if not tenancy %}
+    # Whether social login may create a new user for an unknown verified email.
+    social_allow_signup: bool = False
+{%- endif %}
 {%- endif %}
 {%- if cookie_auth %}
 
@@ -64,6 +91,20 @@ class Settings(BaseSettings):
     @classmethod
     def _empty_domain_is_none(cls, value: object) -> object:
         # COOKIE_DOMAIN= (empty) means "no Domain attribute", not Domain="".
+        return value or None
+{%- endif %}
+{%- if social %}
+
+    @field_validator(
+        "google_client_id",
+        "google_client_secret",
+        "github_client_id",
+        "github_client_secret",
+        mode="before",
+    )
+    @classmethod
+    def _empty_is_unset(cls, value: object) -> object:
+        # GOOGLE_CLIENT_ID= (empty, as in .env.example) means "not configured".
         return value or None
 {%- endif %}
 {%- if auth %}

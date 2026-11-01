@@ -55,7 +55,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 {%- if bearer %}
 
 
-def _pair(issued: IssuedTokens) -> TokenPair:
+def token_pair(issued: IssuedTokens) -> TokenPair:
+    """The JSON body of a Bearer login (shared with social login)."""
     return TokenPair(
         access_token=issued.access_token,
         refresh_token=issued.refresh_token,
@@ -65,8 +66,11 @@ def _pair(issued: IssuedTokens) -> TokenPair:
 {%- if jwt_cookie %}
 
 
-def _set_auth_cookies(response: Response, issued: IssuedTokens) -> CookieSession:
-    """Deliver the tokens as cookies; the body only carries the CSRF token."""
+def set_auth_cookies(response: Response, issued: IssuedTokens) -> CookieSession:
+    """Deliver the tokens as cookies; the body only carries the CSRF token.
+
+    Shared with social login, which delivers the same cookies on its redirect.
+    """
     refresh_max_age = get_settings().refresh_token_expire_days * 24 * 60 * 60
     set_cookie(response, ACCESS_COOKIE, issued.access_token, max_age=issued.expires_in)
     set_cookie(
@@ -103,8 +107,11 @@ async def _refresh_cookie_owner(
 {%- if session %}
 
 
-def _set_session_cookies(response: Response, issued: IssuedSession) -> SessionLogin:
-    """Deliver the session id as an HttpOnly cookie; the body only carries the CSRF token."""
+def set_session_cookies(response: Response, issued: IssuedSession) -> SessionLogin:
+    """Deliver the session id as an HttpOnly cookie; the body only carries the CSRF token.
+
+    Shared with social login, which delivers the same cookies on its redirect.
+    """
     set_cookie(response, SESSION_COOKIE, issued.raw_id, max_age=issued.expires_in)
     csrf_token = set_csrf_cookie(response, issued.user_id, max_age=issued.expires_in)
     return SessionLogin(expires_in=issued.expires_in, csrf_token=csrf_token)
@@ -121,12 +128,12 @@ def _clear_session_cookies(response: Response) -> None:
 # POST only: credentials never go in a query string, and GET must not log anyone in.
 @router.post("/login", response_model=TokenPair)
 async def login(body: LoginRequest, service: AuthServiceDep) -> TokenPair:
-    return _pair(await service.login(body.email, body.password))
+    return token_pair(await service.login(body.email, body.password))
 
 
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(body: RefreshRequest, service: AuthServiceDep) -> TokenPair:
-    return _pair(await service.refresh(body.refresh_token))
+    return token_pair(await service.refresh(body.refresh_token))
 
 
 @router.post("/logout", status_code=204)
@@ -161,18 +168,18 @@ async def login(
     {{ pad }}# Never adopts a presented session id; a valid one is deleted (fixation).
     {{ pad }}presented = request.cookies.get(SESSION_COOKIE)
     {{ pad }}started = await sessions.login(body.email, body.password, presented)
-    {{ pad }}return _set_session_cookies(response, started)
+    {{ pad }}return set_session_cookies(response, started)
 {%- endif %}
 {%- if jwt %}
     issued = await service.login(body.email, body.password)
 {%- if both %}
     if body.delivery == "cookie":
-        return _set_auth_cookies(response, issued)
-    return _pair(issued)
+        return set_auth_cookies(response, issued)
+    return token_pair(issued)
 {%- elif bearer %}
-    return _pair(issued)
+    return token_pair(issued)
 {%- else %}
-    return _set_auth_cookies(response, issued)
+    return set_auth_cookies(response, issued)
 {%- endif %}
 {%- endif %}
 {%- if jwt %}
@@ -193,9 +200,9 @@ async def refresh(
 ) -> {{ "TokenPair | CookieSession" if both else ("TokenPair" if bearer else "CookieSession") }}:
 {%- if both %}
     if body is not None:  # token in the body: Bearer flow, no cookies involved
-        return _pair(await service.refresh(body.refresh_token))
+        return token_pair(await service.refresh(body.refresh_token))
 {%- elif bearer %}
-    return _pair(await service.refresh(body.refresh_token))
+    return token_pair(await service.refresh(body.refresh_token))
 {%- endif %}
 {%- if jwt_cookie %}
     raw, known = await _refresh_cookie_owner(request, service)
@@ -203,7 +210,7 @@ async def refresh(
         raise AppError(401, "not_authenticated", "No refresh token")
     if not known:
         raise AppError(401, "invalid_credentials", "Invalid or expired refresh token")
-    return _set_auth_cookies(response, await service.refresh(raw))
+    return set_auth_cookies(response, await service.refresh(raw))
 {%- endif %}
 {%- endif %}
 

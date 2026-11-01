@@ -14,6 +14,9 @@ from app.models.role import Role
 {%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_session == "y" %}
 from app.models.session import Session
 {%- endif %}
+{%- if cookiecutter.use_auth == "y" and cookiecutter.use_social_login == "y" %}
+from app.models.social_account import SocialAccount
+{%- endif %}
 {%- if cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" %}
 from app.models.tenant import Tenant
 {%- endif %}
@@ -38,6 +41,9 @@ __all__ = [
 {%- endif %}
 {%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_session == "y" %}
     "Session",
+{%- endif %}
+{%- if cookiecutter.use_auth == "y" and cookiecutter.use_social_login == "y" %}
+    "SocialAccount",
 {%- endif %}
 {%- if cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" %}
     "Tenant",

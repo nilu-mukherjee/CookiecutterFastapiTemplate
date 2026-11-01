@@ -51,9 +51,16 @@ class SessionService:
         if user is None:
             # Same error for unknown email, wrong password and inactive user.
             raise AppError(401, "invalid_credentials", "Invalid email or password")
+        return await self.start(user.id, presented)
+
+    async def start(self, user_id: UUID, presented: str | None) -> IssuedSession:
+        """Start a NEW session for a user who has already been authenticated.
+
+        The presented session id, if any, is deleted, never reused (session fixation).
+        """
         if presented:
             await self.repo.delete_by_hash(hash_session_id(presented))
-        issued = await self._create(user.id)
+        issued = await self._create(user_id)
         await self.session.commit()
         return issued
 

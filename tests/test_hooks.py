@@ -391,3 +391,100 @@ def test_multitenancy_with_social_login_has_allow_social_signup(tmp_path):
     for rel in ("app/models/tenant.py", "app/schemas/v1/tenant.py",
                 "alembic/versions/0001_initial.py"):
         assert "allow_social_signup" in (proj / rel).read_text(), rel
+
+
+SOCIAL_PATHS = [
+    "app/core/auth/oauth_providers.py", "app/core/auth/oauth_state.py",
+    "app/models/social_account.py", "app/repositories/social_account.py",
+    "app/services/social.py", "app/api/v1/endpoints/oauth.py",
+    "alembic/versions/0006_social_accounts.py", "tests/auth/test_social.py",
+    "tests/auth/test_social_providers.py",
+]
+SOCIAL_NEEDLES = ("socialloginservice", "social_accounts", "social_account", "oauth_state",
+                  "oauthprovider", "authlib", "google_client", "github_client",
+                  "oauth_redirect", "oauth_success_redirect", "social_allow_signup",
+                  "/oauth", "allow_social_signup", "use_social_login")
+ALL_METHODS = dict(use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="y",
+                   use_auth_session="y", use_auth_api_key="y", use_auth_basic="y")
+
+
+def runtime_dependencies(proj):
+    import tomllib
+    return tomllib.loads((proj / "pyproject.toml").read_text())["project"]["dependencies"]
+
+
+@pytest.mark.parametrize("tenancy", ["y", "n"])
+def test_social_off_leaves_no_social_code(tmp_path, tenancy):
+    r = gen(tmp_path, **ALL_METHODS, use_rbac="y", use_multitenancy=tenancy,
+            use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in SOCIAL_PATHS + ["tests/tenancy/test_social.py"]:
+        assert not (proj / rel).exists(), rel
+    scan(proj, SOCIAL_NEEDLES)
+    # httpx stays a dev (test client) dependency only.
+    assert not any(d.startswith("httpx") for d in runtime_dependencies(proj))
+
+
+def test_bearer_only_without_social_has_no_cookie_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session="n", use_auth_api_key="n", use_auth_basic="n",
+            use_social_login="n", use_rbac="n", use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    assert not (proj / "app/core/auth/cookies.py").exists()
+    scan(proj, SOCIAL_NEEDLES + ("cookie_secure", "cookie_samesite", "cookie_domain"))
+
+
+def test_social_with_bearer_only_generates_social_and_state_cookie_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session="n", use_auth_api_key="n", use_auth_basic="n",
+            use_social_login="y", use_rbac="n", use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in SOCIAL_PATHS:
+        assert (proj / rel).exists(), rel
+    assert not (proj / "tests/tenancy").exists()
+    # The OAuth state cookie needs the cookie helpers and settings, not CSRF.
+    assert (proj / "app/core/auth/cookies.py").exists()
+    assert not (proj / "app/core/auth/csrf.py").exists()
+    assert "csrf" not in (proj / "app/core/auth/cookies.py").read_text().lower()
+    assert "COOKIE_SECURE=" in (proj / ".env.example").read_text()
+    deps = runtime_dependencies(proj)
+    for name in ("authlib", "httpx", "pyjwt"):
+        assert any(d.startswith(name) for d in deps), name
+
+
+def test_social_with_session_only_needs_pyjwt_for_the_state_cookie(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="n",
+            use_auth_session="y", use_auth_api_key="n", use_auth_basic="n",
+            use_social_login="y", use_rbac="n", use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    deps = runtime_dependencies(tmp_path / "my_project")
+    assert any(d.startswith("pyjwt") for d in deps)
+
+
+def test_social_with_tenancy_generates_the_tenancy_social_tests(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_social_login="y",
+            use_rbac="y", use_multitenancy="y")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    assert (proj / "tests/tenancy/test_social.py").exists()
+    assert "social_allow_signup" not in (proj / "app/core/config.py").read_text()
+
+
+@pytest.mark.parametrize(
+    ("session", "api_key", "rbac", "previous"),
+    [("n", "n", "n", "0002"), ("y", "n", "n", "0003"), ("y", "y", "n", "0004"),
+     ("n", "y", "y", "0005"), ("n", "n", "y", "0005")],
+)
+def test_social_migration_chains_onto_the_newest_existing_revision(
+    tmp_path, session, api_key, rbac, previous
+):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session=session, use_auth_api_key=api_key, use_auth_basic="n",
+            use_social_login="y", use_rbac=rbac, use_multitenancy="n")
+    assert r.returncode == 0, r.stderr
+    migration = (tmp_path / "my_project/alembic/versions/0006_social_accounts.py").read_text()
+    assert f'down_revision = "{previous}"' in migration
+    assert f"Revises: {previous}" in migration

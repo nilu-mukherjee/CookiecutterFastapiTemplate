@@ -3,11 +3,13 @@
 {%- set api_key = auth and cookiecutter.use_auth_api_key == "y" -%}
 {%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
 {%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
+{%- set social = auth and cookiecutter.use_social_login == "y" -%}
 {%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y" or cookiecutter.use_auth_session == "y") -%}
 {%- set modules = [] -%}
 {%- if api_key %}{% set _ = modules.append("api_keys") %}{% endif -%}
 {%- if use_jwt %}{% set _ = modules.append("auth") %}{% endif -%}
 {%- set _ = modules.append("items") -%}
+{%- if social %}{% set _ = modules.append("oauth") %}{% endif -%}
 {%- if rbac %}{% set _ = modules.append("roles") %}{% endif -%}
 {%- if tenancy %}{% set _ = modules.append("tenants") %}{% endif -%}
 {%- if auth %}{% set _ = modules.append("users") %}{% endif -%}
@@ -18,6 +20,9 @@ from app.api.v1.endpoints import {{ modules | join(", ") }}
 router = APIRouter()
 {%- if use_jwt %}
 router.include_router(auth.router)
+{%- endif %}
+{%- if social %}
+router.include_router(oauth.router)
 {%- endif %}
 router.include_router(items.router)
 {%- if auth %}

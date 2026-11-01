@@ -7,6 +7,7 @@
 {%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
 {%- set csrf = cookie or session -%}
 {%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
+{%- set social = auth and cookiecutter.use_social_login == "y" -%}
 {#- Basic-only login-less builds: the default client sends a real Basic header. -#}
 {%- set basic_client = basic and not (bearer or cookie or session) -%}
 {% if basic %}import base64
@@ -15,8 +16,9 @@
 # Settings are read when app.main is imported, so the test secret must be set first.
 os.environ["SECRET_KEY"] = "test-secret-key-not-for-production-" + "0123456789abcdef" * 4
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable{% if social %}, Iterator{% endif %}
 {% if rbac %}from typing import Any
+{% endif %}{% if social %}from urllib.parse import parse_qs, urlencode, urlsplit
 {% endif %}{% else %}from collections.abc import AsyncIterator
 {% endif %}
 {% if cookiecutter.use_redis == "y" or auth %}import pytest
@@ -24,11 +26,14 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 {% if cookiecutter.use_redis == "y" %}from fakeredis import FakeServer
 from fakeredis.aioredis import FakeRedis
 {% endif %}{% if auth %}from fastapi import FastAPI
-{% endif %}from httpx import ASGITransport, AsyncClient
+{% endif %}from httpx import ASGITransport, AsyncClient{% if social %}, Response{% endif %}
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 {% if cookiecutter.use_redis == "y" %}import app.cache.redis as redis_module
+{% endif %}{% if social %}from app.api.deps import get_oauth_providers
+from app.core.auth.oauth_providers import ProviderName, SocialProfile
+from app.core.config import get_settings
 {% endif %}{% if bearer %}from app.core.security import create_access_token
 {% endif %}from app.db.session import get_session
 from app.main import create_app
@@ -424,4 +429,111 @@ def fake_redis(monkeypatch: pytest.MonkeyPatch) -> FakeServer:
         redis_module, "_client", FakeRedis(server=server, decode_responses=True)
     )
     return server
+{%- endif %}
+{%- if social %}
+
+
+# --- social login -------------------------------------------------------------------
+
+GOOGLE_SECRET = "google-client-secret-value"
+GITHUB_SECRET = "github-client-secret-value"
+REDIRECT_BASE = "https://api.example.com"
+
+
+@pytest.fixture
+def oauth_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Both providers configured (fake credentials), callback URLs on REDIRECT_BASE."""
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client-id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", GOOGLE_SECRET)
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "github-client-id")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", GITHUB_SECRET)
+    monkeypatch.setenv("OAUTH_REDIRECT_BASE_URL", REDIRECT_BASE)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+class FakeProvider:
+    """Stands in for Google/GitHub (no network): returns ``profile`` or raises ``error``."""
+
+    def __init__(self, name: ProviderName) -> None:
+        self.name = name
+        self.profile: SocialProfile | None = None
+        self.error: Exception | None = None
+        # (code, code_verifier, redirect_uri) of every fetch_profile call.
+        self.calls: list[tuple[str, str, str]] = []
+
+    def authorization_url(self, state: str, code_challenge: str, redirect_uri: str) -> str:
+        query = urlencode(
+            {"state": state, "code_challenge": code_challenge, "redirect_uri": redirect_uri}
+        )
+        return f"https://{self.name.value}.provider.test/authorize?{query}"
+
+    async def fetch_profile(
+        self, code: str, code_verifier: str, redirect_uri: str
+    ) -> SocialProfile:
+        self.calls.append((code, code_verifier, redirect_uri))
+        if self.error is not None:
+            raise self.error
+        assert self.profile is not None, "set FakeProvider.profile first"
+        return self.profile
+
+
+FakeProviders = dict[ProviderName, FakeProvider]
+
+
+@pytest.fixture
+def fake_providers(application: FastAPI, oauth_settings: None) -> FakeProviders:
+    """Both providers replaced by fakes (through the real dependency override)."""
+    providers = {name: FakeProvider(name) for name in ProviderName}
+    application.dependency_overrides[get_oauth_providers] = lambda: providers
+    return providers
+
+
+def social_profile(
+    email: str | None = "social@example.com",
+    *,
+    provider: ProviderName = ProviderName.GOOGLE,
+    subject: str = "subject-1",
+    verified: bool = True,
+) -> SocialProfile:
+    return SocialProfile(
+        provider=provider, subject=subject, email=email, email_verified=verified, name="Social"
+    )
+
+
+SocialLogin = Callable[..., Awaitable[Response]]
+
+
+@pytest.fixture
+def social_login(fake_providers: FakeProviders) -> SocialLogin:
+    """Run the whole flow (login, then the provider's redirect back) with ``client``.
+
+    The fake provider returns ``profile``; ``extra`` adds query parameters to the callback.
+    """
+
+    async def _login(
+        client: AsyncClient,
+        profile: SocialProfile,
+        *,
+{%- if tenancy %}
+        tenant: str | None = None,
+{%- endif %}
+        extra: dict[str, str] | None = None,
+    ) -> Response:
+        fake_providers[profile.provider].profile = profile
+        base = f"/api/v1/oauth/{profile.provider.value}"
+{%- if tenancy %}
+        params = {"tenant": tenant} if tenant else {}
+        r = await client.get(f"{base}/login", params=params)
+{%- else %}
+        r = await client.get(f"{base}/login")
+{%- endif %}
+        assert r.status_code == 302, r.text
+        state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+        return await client.get(
+            f"{base}/callback", params={"code": "the-code", "state": state, **(extra or {})}
+        )
+
+    return _login
 {%- endif %}

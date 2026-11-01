@@ -6,6 +6,7 @@
 {%- set basic = auth and cookiecutter.use_auth_basic == "y" -%}
 {%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
 {%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
+{%- set social = auth and cookiecutter.use_social_login == "y" -%}
 {%- set use_jwt = bearer or jwt_cookie -%}
 {%- set schemes = [] -%}
 {%- if bearer %}{% set _ = schemes.extend(["HTTPAuthorizationCredentials", "HTTPBearer"]) %}{% endif -%}
@@ -33,6 +34,8 @@
 {% endif %}{% if auth %}from app.core.auth import AUTHENTICATORS, Principal
 {% endif %}{% if api_key %}from app.core.auth.api_key import API_KEY_HEADER
 {% endif %}{% if jwt_cookie or session %}from app.core.auth.cookies import {% if jwt_cookie %}ACCESS_COOKIE{% endif %}{% if jwt_cookie and session %}, {% endif %}{% if session %}SESSION_COOKIE{% endif %}
+{% endif %}{% if social %}from app.core.auth.oauth_providers import OAuthProviders, configured_providers
+from app.core.config import get_settings
 {% endif %}{% if auth %}from app.core.exceptions import AppError
 {% endif %}from app.db.session import get_session
 {% if api_key %}from app.services.api_key import ApiKeyService
@@ -40,6 +43,7 @@
 {% endif %}from app.services.item import ItemService
 {% if rbac %}from app.services.rbac import RbacService
 {% endif %}{% if session %}from app.services.session import SessionService
+{% endif %}{% if social %}from app.services.social import SocialLoginService
 {% endif %}{% if tenancy %}from app.services.tenant import TenantService
 {% endif %}{% if auth %}from app.services.user import UserService
 {% endif %}
@@ -102,6 +106,23 @@ def get_session_service(session: SessionDep) -> SessionService:
 
 
 SessionServiceDep = Annotated[SessionService, Depends(get_session_service)]
+{%- endif %}
+{%- if social %}
+
+
+def get_oauth_providers() -> OAuthProviders:
+    """The enabled social login providers. Tests override this with fake providers."""
+    return configured_providers(get_settings())
+
+
+OAuthProvidersDep = Annotated[OAuthProviders, Depends(get_oauth_providers)]
+
+
+def get_social_login_service(session: SessionDep) -> SocialLoginService:
+    return SocialLoginService(session)
+
+
+SocialLoginServiceDep = Annotated[SocialLoginService, Depends(get_social_login_service)]
 {%- endif %}
 {%- if bearer %}
 

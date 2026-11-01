@@ -1,4 +1,6 @@
 {%- set tenancy = cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" -%}
+{%- set social = cookiecutter.use_auth == "y" and cookiecutter.use_social_login == "y" -%}
+{%- set inspect_schema = tenancy or social -%}
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -39,6 +41,9 @@ EXPECTED_TABLES = {
     "role_permissions",
     "user_roles",
 {%- endif %}
+{%- if social %}
+    "social_accounts",
+{%- endif %}
 }
 {%- if tenancy %}
 # Tenant-owned tables: each has a non-null, indexed tenant_id referencing tenants.id.
@@ -51,7 +56,7 @@ TENANT_OWNED = [
 ]
 {%- endif %}
 # The newest revision that exists in this build (the chain skips pruned ones).
-EXPECTED_HEAD = "{{ '0005' if cookiecutter.use_auth == 'y' and cookiecutter.use_rbac == 'y' else '0004' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_api_key == 'y' else ('0003' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_session == 'y' else ('0002' if cookiecutter.use_auth == 'y' else '0001')) }}"
+EXPECTED_HEAD = "{{ '0006' if cookiecutter.use_auth == 'y' and cookiecutter.use_social_login == 'y' else '0005' if cookiecutter.use_auth == 'y' and cookiecutter.use_rbac == 'y' else '0004' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_api_key == 'y' else ('0003' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_session == 'y' else ('0002' if cookiecutter.use_auth == 'y' else '0001')) }}"
 
 
 @pytest.fixture
@@ -70,7 +75,7 @@ def _config() -> Config:
     return cfg
 
 
-{% if tenancy %}def _columns(db: Path, table: str) -> dict[str, bool]:
+{% if inspect_schema %}def _columns(db: Path, table: str) -> dict[str, bool]:
     """Column name -> NOT NULL."""
     with sqlite3.connect(db) as conn:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -123,6 +128,34 @@ def test_tenant_owned_tables_have_a_required_indexed_tenant_fk(sqlite_url: Path)
     role_indexes = _indexed_columns(sqlite_url, "roles")
     assert (["tenant_id", "name"], True) in role_indexes
     assert (["name"], True) not in role_indexes
+{%- endif %}
+    command.downgrade(_config(), "base")
+    assert _tables(sqlite_url) == {"alembic_version"}
+{%- endif %}
+
+
+{%- if social %}
+
+
+def test_social_accounts_belong_to_users_with_unique_provider_identities(
+    sqlite_url: Path,
+) -> None:
+    command.upgrade(_config(), "head")
+    columns = _columns(sqlite_url, "social_accounts")
+    assert {"id", "user_id", "provider", "subject", "email", "created_at"} <= set(columns)
+    assert all(columns[c] for c in ("user_id", "provider", "subject", "email"))
+    indexes = _indexed_columns(sqlite_url, "social_accounts")
+    # A provider account links to one user; a user has one account per provider.
+    assert (["provider", "subject"], True) in indexes
+    assert (["user_id", "provider"], True) in indexes
+    assert (["user_id"], False) in indexes
+    assert ("user_id", "users", "id") in _foreign_keys(sqlite_url, "social_accounts")
+    with sqlite3.connect(sqlite_url) as conn:
+        rows = conn.execute("PRAGMA foreign_key_list(social_accounts)").fetchall()
+    assert {r[6] for r in rows} == {"CASCADE"}  # on_delete
+{%- if tenancy %}
+    # Not tenant-owned: it belongs to the user (who belongs to a tenant).
+    assert "tenant_id" not in columns
 {%- endif %}
     command.downgrade(_config(), "base")
     assert _tables(sqlite_url) == {"alembic_version"}

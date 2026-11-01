@@ -64,11 +64,10 @@ PRUNE: dict[Key, list[str]] = {
         "app/core/auth/jwt_cookie.py",
         "tests/auth/test_jwt_cookie.py",
     ],
-    # Cookie names/attributes and CSRF are shared by every cookie method.
-    ("use_auth", COOKIE_METHODS): [
-        "app/core/auth/cookies.py",
-        "app/core/auth/csrf.py",
-    ],
+    # Cookie names/attributes: every cookie method, and social login's OAuth state cookie.
+    ("use_auth", (*COOKIE_METHODS, "use_social_login")): ["app/core/auth/cookies.py"],
+    # CSRF is shared by every cookie method.
+    ("use_auth", COOKIE_METHODS): ["app/core/auth/csrf.py"],
     ("use_auth", "use_auth_session"): [
         "app/core/auth/session.py",
         "app/models/session.py",
@@ -113,6 +112,18 @@ PRUNE: dict[Key, list[str]] = {
         "tests/tenancy",
     ],
     ("use_auth", "use_multitenancy", "use_rbac"): ["tests/tenancy/test_roles.py"],
+    ("use_auth", "use_social_login"): [
+        "app/core/auth/oauth_providers.py",
+        "app/core/auth/oauth_state.py",
+        "app/models/social_account.py",
+        "app/repositories/social_account.py",
+        "app/services/social.py",
+        "app/api/v1/endpoints/oauth.py",
+        "alembic/versions/0006_social_accounts.py",
+        "tests/auth/test_social.py",
+        "tests/auth/test_social_providers.py",
+    ],
+    ("use_auth", "use_multitenancy", "use_social_login"): ["tests/tenancy/test_social.py"],
     # Precedence between Bearer and the key/Basic methods needs Bearer and one of them.
     ("use_auth", "use_auth_jwt_bearer", ("use_auth_api_key", "use_auth_basic")): [
         "tests/auth/test_credential_precedence.py",

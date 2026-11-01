@@ -45,6 +45,10 @@ class AuthService:
         user = await self.users.authenticate(email, password)
         if user is None:
             raise _invalid_login()
+        return await self.login_user(user)
+
+    async def login_user(self, user: User) -> IssuedTokens:
+        """Issue a token pair for a user who has already been authenticated."""
         issued = await self._issue(user, datetime.now(UTC))
         await self.session.commit()
         return issued
