@@ -34,6 +34,7 @@ from app.core.config import get_settings
 {%- endif %}
 from app.core.exceptions import AppError
 from app.realtime.broker import BrokerUnavailable, EventBroker, channel_for
+from app.realtime.follow import follow
 {%- if rbac %}
 from app.services.rbac import RbacService
 {%- endif %}
@@ -48,8 +49,6 @@ POLICY_VIOLATION = 1008
 INTERNAL_ERROR = 1011
 TRY_AGAIN_LATER = 1013
 
-# A wait for events is made of slices this long, so a shutdown is noticed within one.
-READ_SLICE_SECONDS = 1.0
 {%- if cookie_auth %}
 COOKIE_METHODS = frozenset({ {%- if cookiecutter.use_auth_jwt_cookie == "y" %}"jwt_cookie"{% endif %}{% if cookiecutter.use_auth_jwt_cookie == "y" and cookiecutter.use_auth_session == "y" %}, {% endif %}{% if cookiecutter.use_auth_session == "y" %}"session"{% endif %}})
 
@@ -78,10 +77,8 @@ async def forward(
 ) -> int:
     """Send events as they are published; returns the close code for the end of the stream."""
     try:
-        while not closing.is_set():
-            for event in await broker.read(channel, cursor, READ_SLICE_SECONDS):
-                cursor = event.id
-                await websocket.send_json({"id": event.id, "type": event.type, "data": event.data})
+        async for event in follow(broker, channel, cursor, closing):
+            await websocket.send_json({"id": event.id, "type": event.type, "data": event.data})
     except BrokerUnavailable as exc:
         # The class only: a message can contain the broker URL and credentials.
         logger.warning("event socket ended: broker unavailable (%s)", type(exc).__name__)

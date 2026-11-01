@@ -25,6 +25,7 @@ class Socket:
         client: AsyncClient,
         path: str,
         headers: dict[str, str] | None = None,
+        subprotocols: list[str] | None = None,
     ) -> None:
         request = client.build_request("GET", path, headers=headers)
         self._scope: Scope = {
@@ -39,7 +40,7 @@ class Socket:
             "headers": [(k.lower(), v) for k, v in request.headers.raw],  # ASGI: lowercase
             "server": ("test", 80),
             "client": ("127.0.0.1", 50000),
-            "subprotocols": [],
+            "subprotocols": subprotocols or [],
         }
         self._app = app
         self._to_app: asyncio.Queue[Message] = asyncio.Queue()

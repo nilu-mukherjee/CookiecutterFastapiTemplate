@@ -36,6 +36,8 @@ PRUNE: dict[Key, list[str]] = {
     ],
     # The broker exists when ANY realtime method is on (an any-of group).
     (REALTIME,): ["app/realtime", "tests/realtime"],
+    # The WebSocket test client also drives GraphQL subscriptions.
+    (("use_websocket", "use_graphql"),): ["tests/api/v1/ws_client.py"],
     ("use_redis", REALTIME): ["app/realtime/redis_broker.py"],
     "use_sse": [
         "app/api/v1/endpoints/events.py",
@@ -49,9 +51,9 @@ PRUNE: dict[Key, list[str]] = {
     ],
     "use_websocket": [
         "app/api/v1/endpoints/ws.py",
-        "tests/api/v1/ws_client.py",
         "tests/api/v1/test_ws.py",
     ],
+    "use_graphql": ["app/graphql", "tests/graphql"],
     "use_celery": ["app/worker", "tests/worker"],
     ("use_celery", "use_celery_beat"): ["tests/worker/test_beat.py"],
     "use_auth": [

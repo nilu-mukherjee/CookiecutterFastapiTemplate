@@ -220,7 +220,10 @@ async def test_stream_ends_cleanly_on_disconnect(
             stream = Stream(application, client, EVENTS, spec_version=spec_version)
             async with stream:
                 await create(client)
-                assert parse(await stream.next_frame())["event"] == "item.created"
+                frame = await stream.next_frame()
+                while frame == ": keepalive\n\n":  # 50 ms heartbeats can precede the event
+                    frame = await stream.next_frame()
+                assert parse(frame)["event"] == "item.created"
             # __aexit__ disconnected and waited: the app finished without an error.
             assert stream.task is not None and stream.task.done()
     finally:

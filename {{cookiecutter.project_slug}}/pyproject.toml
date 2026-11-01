@@ -26,6 +26,10 @@ dependencies = [
 {%- if cookiecutter.use_celery == "y" %}
     "celery>=5.4",
 {%- endif %}
+{%- if cookiecutter.use_graphql == "y" %}
+    # 0.339 added the WebSocket Origin check (allowed_origins) that subscriptions rely on.
+    "strawberry-graphql>=0.339",
+{%- endif %}
 {%- if cookiecutter.database == "postgresql" %}
     "asyncpg>=0.29",
 {%- elif cookiecutter.database == "mysql" %}

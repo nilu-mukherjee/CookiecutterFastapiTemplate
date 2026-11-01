@@ -12,7 +12,8 @@
 * **Pick your stack**: a database choice and 20 yes/no flags decide what is generated. Code for a feature you turn off is not in the project at all, so there is nothing to delete later.
 * **Five authentication methods**: JWT Bearer, JWT in an HttpOnly cookie, server-side sessions, API keys and HTTP Basic, with CSRF protection for the cookie methods. Enable any combination.
 * **Authorization and tenancy**: optional roles and permissions, and optional shared-schema multi-tenancy where repositories filter by tenant on every query.
-* **Realtime item events**: Server-Sent Events, long polling and WebSocket endpoints share one event broker, in memory or on Redis Streams.
+* **Realtime item events**: Server-Sent Events, long polling, WebSocket and GraphQL subscriptions share one event broker, in memory or on Redis Streams.
+* **GraphQL**: queries and mutations over the same item service, with the same authentication, permissions and tenant scoping as REST.
 * **Checked on every build**: the template ships a script that generates a project and runs ruff, mypy and pytest on it.
 
 ## 📦 Installation
@@ -62,6 +63,12 @@ With `use_sse`, `use_long_polling` and `use_websocket` on, creating, updating or
 
 For WebSocket, credentials are read from the handshake headers and cookies only. A token in the query string is never accepted. A handshake that carries a cookie must come from the server's own origin or one listed in `CORS_ORIGINS`, otherwise it is rejected (this stops other sites from using a visitor's cookies). With multi-tenancy on, a client only ever receives its own tenant's events.
 
+### GraphQL
+
+With `use_graphql`, `/graphql` serves `items(limit, offset)` and `item(id)` queries and `createItem`, `updateItem` and `deleteItem` mutations. All call the same `ItemService` as the REST endpoints and accept the same credentials, CSRF rules, permissions and tenant scoping. An unauthenticated request is a 401. A missing permission is a GraphQL error. An item outside the caller's tenant comes back as `null`.
+
+When a realtime flag is on, the `itemEvents` subscription streams item changes over the `graphql-transport-ws` protocol. A subscription handshake must come from the server's own origin or one in `CORS_ORIGINS`. Queries nested deeper than 10 levels are rejected. In `prod`, introspection and the GraphiQL page are turned off.
+
 Without `use_redis` the broker lives in the process, so events reach only clients connected to that process. Turn on Redis, or run one worker, if you need more.
 
 ## 🛠️ Configuration and environment variables
@@ -92,7 +99,7 @@ Flags default to `y`. `project_slug` is derived from `project_name`.
 | `use_sse` | `y`, `n` | Server-Sent Events endpoint. |
 | `use_long_polling` | `y`, `n` | Long polling endpoint. |
 | `use_websocket` | `y`, `n` | WebSocket endpoint. |
-| `use_graphql` | `y`, `n` | Not built yet. The flag exists but generates nothing. |
+| `use_graphql` | `y`, `n` | Strawberry GraphQL at `/graphql`, with a subscription when a realtime flag is on. |
 | `use_grpc` | `y`, `n` | Not built yet. The flag exists but generates nothing. With `use_auth` it will need Bearer or API key auth. |
 | `use_celery` | `y`, `n` | Celery worker with RabbitMQ as the broker. |
 | `use_celery_beat` | `y`, `n` | Needs `use_celery`. Periodic task scheduler. |

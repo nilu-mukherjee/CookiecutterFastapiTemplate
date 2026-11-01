@@ -538,11 +538,12 @@ SSE_PATHS = ["app/api/v1/endpoints/events.py", "tests/api/v1/streaming.py",
 POLL_PATHS = ["app/api/v1/endpoints/poll.py", "app/schemas/v1/event.py",
               "tests/api/v1/test_poll.py"]
 BROKER_PATHS = ["app/realtime/__init__.py", "app/realtime/broker.py",
-                "app/realtime/state.py", "tests/realtime/test_broker.py",
+                "app/realtime/state.py", "app/realtime/follow.py", "tests/realtime/test_broker.py",
                 "tests/realtime/test_publish.py", "tests/realtime/test_state.py"]
 REDIS_BROKER_PATHS = ["app/realtime/redis_broker.py"]
-WS_PATHS = ["app/api/v1/endpoints/ws.py", "tests/api/v1/ws_client.py",
-            "tests/api/v1/test_ws.py"]
+WS_PATHS = ["app/api/v1/endpoints/ws.py", "tests/api/v1/test_ws.py"]
+WS_CLIENT = "tests/api/v1/ws_client.py"  # also drives GraphQL subscriptions
+GRAPHQL_PATHS = ["app/graphql/schema.py", "app/graphql/context.py", "tests/graphql/test_graphql.py"]
 
 
 def load_check_project():
@@ -627,6 +628,37 @@ def test_websocket_off_leaves_no_websocket_code(tmp_path):
     for rel in WS_PATHS:
         assert not (proj / rel).exists(), rel
     scan(proj, ("/ws/items", "answer_pings", "origin_allowed", "authenticate_connection(websocket"))
+
+
+@pytest.mark.parametrize(
+    ("websocket", "graphql", "client_kept"),
+    [("n", "n", False), ("y", "n", True), ("n", "y", True)],
+)
+def test_websocket_test_client_is_kept_for_websocket_or_graphql(
+    tmp_path, websocket, graphql, client_kept
+):
+    r = gen(tmp_path, use_websocket=websocket, use_graphql=graphql)
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / "my_project" / WS_CLIENT).exists() == client_kept
+
+
+def test_graphql_off_leaves_no_graphql_code(tmp_path):
+    r = gen(tmp_path, use_graphql="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    assert not (proj / "app/graphql").exists()
+    assert not (proj / "tests/graphql").exists()
+    scan(proj, ("strawberry", "create_graphql_router", "app.graphql"))
+
+
+def test_graphql_on_generates_it_with_or_without_a_broker(tmp_path):
+    r = gen(tmp_path, **NO_REALTIME, use_graphql="y")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in GRAPHQL_PATHS:
+        assert (proj / rel).exists(), rel
+    assert not (proj / "app/realtime").exists()
+    assert "Subscription" not in (proj / "app/graphql/schema.py").read_text()
 
 
 def test_redis_off_leaves_no_redis_broker(tmp_path):
