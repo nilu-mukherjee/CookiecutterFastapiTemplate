@@ -13,6 +13,7 @@
 * **Five authentication methods**: JWT Bearer, JWT in an HttpOnly cookie, server-side sessions, API keys and HTTP Basic, with CSRF protection for the cookie methods. Enable any combination.
 * **Authorization and tenancy**: optional roles and permissions, and optional shared-schema multi-tenancy where repositories filter by tenant on every query.
 * **Realtime item events**: Server-Sent Events, long polling, WebSocket and GraphQL subscriptions share one event broker, in memory or on Redis Streams.
+* **gRPC**: an `items.v1` service with committed, drift-tested stubs, served by its own process and authenticated with Bearer tokens or API keys.
 * **GraphQL**: queries and mutations over the same item service, with the same authentication, permissions and tenant scoping as REST.
 * **Checked on every build**: the template ships a script that generates a project and runs ruff, mypy and pytest on it.
 
@@ -69,6 +70,18 @@ With `use_graphql`, `/graphql` serves `items(limit, offset)` and `item(id)` quer
 
 When a realtime flag is on, the `itemEvents` subscription streams item changes over the `graphql-transport-ws` protocol. A subscription handshake must come from the server's own origin or one in `CORS_ORIGINS`. Queries nested deeper than 10 levels are rejected. In `prod`, introspection and the GraphiQL page are turned off.
 
+### gRPC
+
+With `use_grpc`, `proto/items/v1/items.proto` defines `ItemService` with `GetItem`, `ListItems`, `CreateItem`, `UpdateItem`, `DeleteItem` and the server-streaming `StreamItemEvents`. It calls the same `ItemService` as REST and GraphQL, so permissions and tenant scoping apply the same way. Run it as its own process:
+
+```bash
+uv run python -m app.grpc.server       # listens on GRPC_PORT, default 50051
+```
+
+Send `authorization: Bearer <token>` or `x-api-key: <key>` as call metadata. Cookie, session and Basic credentials are ignored, so those calls are UNAUTHENTICATED. Domain errors map to gRPC status codes (not found, permission denied, unauthenticated, invalid argument). Set `GRPC_TLS_CERT` and `GRPC_TLS_KEY` to serve TLS. Server reflection is on only when `ENVIRONMENT=dev`. `StreamItemEvents` answers UNIMPLEMENTED in a project generated without a realtime flag, because there is no event broker to read from.
+
+The generated stubs in `app/grpc/generated` are committed. After editing the proto file run `uv run python scripts/gen_proto.py`; a test fails if the stubs and the proto disagree.
+
 Without `use_redis` the broker lives in the process, so events reach only clients connected to that process. Turn on Redis, or run one worker, if you need more.
 
 ## 🛠️ Configuration and environment variables
@@ -100,7 +113,7 @@ Flags default to `y`. `project_slug` is derived from `project_name`.
 | `use_long_polling` | `y`, `n` | Long polling endpoint. |
 | `use_websocket` | `y`, `n` | WebSocket endpoint. |
 | `use_graphql` | `y`, `n` | Strawberry GraphQL at `/graphql`, with a subscription when a realtime flag is on. |
-| `use_grpc` | `y`, `n` | Not built yet. The flag exists but generates nothing. With `use_auth` it will need Bearer or API key auth. |
+| `use_grpc` | `y`, `n` | gRPC item service in its own process. With `use_auth` it needs Bearer or API key auth, because gRPC calls cannot carry cookies, sessions or Basic. |
 | `use_celery` | `y`, `n` | Celery worker with RabbitMQ as the broker. |
 | `use_celery_beat` | `y`, `n` | Needs `use_celery`. Periodic task scheduler. |
 | `use_flower` | `y`, `n` | Needs `use_celery`. Declares the Flower dashboard credentials setting. The Flower service itself arrives with Docker support. |

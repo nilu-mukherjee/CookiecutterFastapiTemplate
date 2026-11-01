@@ -26,6 +26,13 @@ dependencies = [
 {%- if cookiecutter.use_celery == "y" %}
     "celery>=5.4",
 {%- endif %}
+{%- if cookiecutter.use_grpc == "y" %}
+    # The committed stubs in app/grpc/generated were generated with grpcio-tools 1.85.1
+    # (protobuf 7.35.1) and refuse to import with anything older.
+    "grpcio>=1.85.1",
+    "grpcio-reflection>=1.85.1",
+    "protobuf>=7.35.1",
+{%- endif %}
 {%- if cookiecutter.use_graphql == "y" %}
     # 0.339 added the WebSocket Origin check (allowed_origins) that subscriptions rely on.
     "strawberry-graphql>=0.339",
@@ -50,6 +57,10 @@ dev = [
 {%- if cookiecutter.use_redis == "y" %}
     "fakeredis>=2.23",
 {%- endif %}
+{%- if cookiecutter.use_grpc == "y" %}
+    # Pinned exactly: a test regenerates the stubs and compares them with the committed ones.
+    "grpcio-tools==1.85.1",
+{%- endif %}
 ]
 
 [tool.uv]
@@ -64,6 +75,10 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py{{ cookiecutter.python_version|replace('.', '') }}"
+
+{%- if cookiecutter.use_grpc == "y" %}
+extend-exclude = ["app/grpc/generated"]
+{%- endif %}
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -83,6 +98,23 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["app.worker.tasks.*"]
 disallow_untyped_decorators = false
+{%- endif %}
+
+{%- if cookiecutter.use_grpc == "y" %}
+
+# grpcio ships no type information, and the generated stubs are not ours to annotate.
+[[tool.mypy.overrides]]
+module = ["grpc", "grpc.*", "grpc_reflection", "grpc_reflection.*", "grpc_tools", "grpc_tools.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["app.grpc.generated.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["app.grpc.*"]
+disallow_subclassing_any = false
+disallow_untyped_calls = false
 {%- endif %}
 
 [tool.ruff.lint.isort]

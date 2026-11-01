@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package items.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// The same operations as the REST and GraphQL item APIs, over the same service layer.
+service ItemService {
+  rpc GetItem(GetItemRequest) returns (Item);
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+  rpc CreateItem(CreateItemRequest) returns (Item);
+  rpc UpdateItem(UpdateItemRequest) returns (Item);
+  rpc DeleteItem(DeleteItemRequest) returns (DeleteItemResponse);
+
+  // Item changes from the moment of the call. Answers UNIMPLEMENTED when the project was
+  // generated without a realtime event broker.
+  rpc StreamItemEvents(StreamItemEventsRequest) returns (stream ItemEvent);
+}
+
+message Item {
+  string id = 1;
+  string name = 2;
+  optional string description = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message GetItemRequest {
+  string id = 1;
+}
+
+message ListItemsRequest {
+  // 1 to 100; 0 means the default of 20.
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListItemsResponse {
+  repeated Item items = 1;
+  int32 total = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message CreateItemRequest {
+  string name = 1;
+  optional string description = 2;
+}
+
+// Only the fields that are set change. An empty description clears it.
+message UpdateItemRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string description = 3;
+}
+
+message DeleteItemRequest {
+  string id = 1;
+}
+
+message DeleteItemResponse {}
+
+message StreamItemEventsRequest {}
+
+// Like every item event, it carries ids only: call GetItem for the item itself.
+message ItemEvent {
+  string id = 1;
+  string type = 2;
+  string item_id = 3;
+}

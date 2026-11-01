@@ -54,6 +54,7 @@ PRUNE: dict[Key, list[str]] = {
         "tests/api/v1/test_ws.py",
     ],
     "use_graphql": ["app/graphql", "tests/graphql"],
+    "use_grpc": ["proto", "scripts/gen_proto.py", "app/grpc", "tests/grpc"],
     "use_celery": ["app/worker", "tests/worker"],
     ("use_celery", "use_celery_beat"): ["tests/worker/test_beat.py"],
     "use_auth": [
@@ -177,6 +178,10 @@ def main() -> None:
         if is_off(key):
             for rel in paths:
                 remove(root / rel)
+    # A directory emptied by pruning is not worth keeping.
+    scripts = root / "scripts"
+    if scripts.is_dir() and not any(scripts.iterdir()):
+        scripts.rmdir()
     if shutil.which("git"):
         subprocess.run(["git", "init", "-q"], check=False)
 

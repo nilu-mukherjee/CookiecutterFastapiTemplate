@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     # Most long-lived connections (streams, long polls) one process serves at once.
     realtime_max_connections: PositiveInt = 1000
 {%- endif %}
+{%- if cookiecutter.use_grpc == "y" %}
+    # The gRPC server (python -m app.grpc.server) is a separate process. Both TLS files
+    # must be set to serve TLS; without them it serves plaintext (fine behind a
+    # TLS-terminating proxy or in dev).
+    grpc_port: int = 50051
+    grpc_tls_cert: str | None = None
+    grpc_tls_key: str | None = None
+{%- endif %}
 {%- if sse %}
     # Idle SSE streams send a comment this often so proxies keep the connection open.
     sse_heartbeat_seconds: PositiveFloat = 15.0

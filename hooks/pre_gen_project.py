@@ -13,6 +13,7 @@ flags = {
     "use_social_login": "{{ cookiecutter.use_social_login }}",
     "use_rbac": "{{ cookiecutter.use_rbac }}",
     "use_multitenancy": "{{ cookiecutter.use_multitenancy }}",
+    "use_grpc": "{{ cookiecutter.use_grpc }}",
     "use_celery": "{{ cookiecutter.use_celery }}",
     "use_celery_beat": "{{ cookiecutter.use_celery_beat }}",
     "use_flower": "{{ cookiecutter.use_flower }}",
@@ -48,6 +49,10 @@ if on("use_auth"):
     if on("use_auth_api_key") and not any(on(m) for m in HUMAN_METHODS):
         fail("use_auth_api_key=y requires one of: " + ", ".join(HUMAN_METHODS)
              + " (a key cannot create the first key)")
+    # gRPC calls carry only Bearer and API key credentials (cookies and Basic do not apply).
+    if on("use_grpc") and not (on("use_auth_jwt_bearer") or on("use_auth_api_key")):
+        fail("use_grpc=y with use_auth=y requires use_auth_jwt_bearer or use_auth_api_key "
+             "(gRPC calls cannot carry cookie, session or Basic credentials)")
 else:
     for dep in ("use_rbac", "use_multitenancy", "use_social_login"):
         if on(dep):

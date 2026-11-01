@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def gen(tmp_path, **flags):
+    # gRPC rejects cookie/session/Basic-only auth builds, which many tests here create on
+    # purpose; they are about other features, so gRPC is off unless a test asks for it.
+    flags.setdefault("use_grpc", "n")
     cmd = [sys.executable, "-m", "cookiecutter", "--no-input", str(ROOT), "-o", str(tmp_path)]
     cmd += [f"{k}={v}" for k, v in flags.items()]
     return subprocess.run(cmd, capture_output=True, text=True)
@@ -51,7 +54,7 @@ def test_auth_off_ignores_method_flags_and_notices(tmp_path):
 
 
 def test_defaults_generate(tmp_path):
-    r = gen(tmp_path)
+    r = gen(tmp_path, use_grpc="y")
     assert r.returncode == 0, r.stderr
     assert (tmp_path / "my_project" / "README.md").exists()
 
@@ -659,6 +662,43 @@ def test_graphql_on_generates_it_with_or_without_a_broker(tmp_path):
         assert (proj / rel).exists(), rel
     assert not (proj / "app/realtime").exists()
     assert "Subscription" not in (proj / "app/graphql/schema.py").read_text()
+
+
+GRPC_PATHS = ["proto/items/v1/items.proto", "scripts/gen_proto.py", "app/grpc/server.py",
+              "app/grpc/servicers.py", "app/grpc/interceptors.py",
+              "app/grpc/generated/items_pb2.py", "app/grpc/generated/items_pb2_grpc.py",
+              "tests/grpc/test_grpc.py"]
+COOKIE_ONLY = dict(use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="y",
+                   use_auth_session="n", use_auth_api_key="n", use_auth_basic="n",
+                   use_social_login="n")
+
+
+def test_pre_gen_rejects_grpc_with_only_cookie_auth(tmp_path):
+    r = gen(tmp_path, use_grpc="y", **COOKIE_ONLY)
+    assert r.returncode != 0
+    assert "use_grpc=y" in r.stderr and "use_auth_jwt_bearer" in r.stderr
+
+
+@pytest.mark.parametrize("auth", [
+    dict(use_auth="n", use_rbac="n", use_multitenancy="n", use_social_login="n"),
+    dict(use_auth_jwt_bearer="y", use_auth_jwt_cookie="n", use_auth_session="n"),
+    dict(use_auth_jwt_bearer="n", use_auth_jwt_cookie="y", use_auth_api_key="y"),
+])
+def test_grpc_is_accepted_with_no_auth_bearer_or_api_key(tmp_path, auth):
+    r = gen(tmp_path, use_grpc="y", **auth)
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in GRPC_PATHS:
+        assert (proj / rel).exists(), rel
+
+
+def test_grpc_off_leaves_no_grpc_code(tmp_path):
+    r = gen(tmp_path, use_grpc="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in [*GRPC_PATHS, "proto", "app/grpc", "tests/grpc", "scripts"]:
+        assert not (proj / rel).exists(), rel
+    scan(proj, ("grpc", "protobuf", "items_pb2", "gen_proto"))
 
 
 def test_redis_off_leaves_no_redis_broker(tmp_path):
