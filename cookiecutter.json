@@ -1,0 +1,23 @@
+{
+  "project_name": "My Project",
+  "project_slug": "{{ cookiecutter.project_name.lower().replace(' ', '_').replace('-', '_') }}",
+  "author": "Your Name",
+  "author_email": "you@example.com",
+  "python_version": ["3.12", "3.13"],
+  "database": ["postgresql", "mysql", "sqlite"],
+  "use_docker": ["y", "n"],
+  "use_github_actions": ["y", "n"],
+  "use_auth": ["y", "n"],
+  "use_auth_jwt_bearer": ["y", "n"],
+  "use_auth_jwt_cookie": ["y", "n"],
+  "use_auth_session": ["y", "n"],
+  "use_auth_api_key": ["y", "n"],
+  "use_auth_basic": ["y", "n"],
+  "use_social_login": ["y", "n"],
+  "use_rbac": ["y", "n"],
+  "use_multitenancy": ["y", "n"],
+  "use_redis": ["y", "n"],
+  "use_celery": ["y", "n"],
+  "use_celery_beat": ["y", "n"],
+  "use_flower": ["y", "n"]
+}

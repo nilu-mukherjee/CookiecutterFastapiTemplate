@@ -1,0 +1,9 @@
+[project]
+name = "fastapi-cookiecutter-dev"
+version = "0.0.0"
+description = "Dev tooling for the FastAPI cookiecutter template"
+requires-python = ">=3.12"
+dependencies = ["cookiecutter", "pytest", "pyyaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
