@@ -14,6 +14,7 @@ from app.core.auth.oauth_providers import SocialProfile
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.models import SocialAccount, Tenant, User
+from app.repositories.social_account import SocialAccountRepository
 {%- if rbac %}
 from app.services.rbac import RbacService
 {%- endif %}
@@ -226,3 +227,29 @@ async def test_http_signup_into_the_named_tenant_and_denials_look_alike(
     inactive = await social_login(anon_client, social_profile("inactive@example.com", subject="i"))
     assert _body(other) == _body(inactive)
     assert _body(other)[:2] == (403, "social_login_denied")
+
+
+async def test_a_lost_link_race_leaves_no_orphan_user(
+    maker: async_sessionmaker[AsyncSession],
+    make_user: MakeUser,
+    make_social_tenant: MakeSocialTenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await make_social_tenant("acme")
+    other = await make_user("other@example.com")
+    async with maker() as session:
+        session.add(
+            SocialAccount(user_id=other.id, provider="google", subject="subject-1", email="o")
+        )
+        await session.commit()
+
+    # Another request linked (google, subject-1) between our lookup and our insert.
+    async def not_found_yet(self: object, provider: str, subject: str) -> None:
+        return None
+
+    monkeypatch.setattr(SocialAccountRepository, "get_by_subject", not_found_yet)
+    error = await _error(maker, social_profile("new@example.com"), "acme")
+    assert error.code == "social_login_denied"
+    async with maker() as session:
+        orphan = await session.scalar(select(User).where(User.email == "new@example.com"))
+    assert orphan is None

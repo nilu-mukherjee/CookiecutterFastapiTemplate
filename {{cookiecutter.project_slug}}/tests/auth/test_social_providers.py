@@ -92,6 +92,7 @@ async def test_google_exchanges_the_code_with_pkce_and_reads_userinfo() -> None:
         name="Someone",
     )
     _assert_token_request(recorder.requests[0], GOOGLE_TOKEN, "google-id")
+    assert recorder.requests[0].headers["accept"] == "application/json"
     assert [str(r.url) for r in recorder.requests] == [GOOGLE_TOKEN, GOOGLE_USERINFO]
     _assert_timeouts(recorder)
 
@@ -183,6 +184,11 @@ def _timeout(request: httpx.Request) -> httpx.Response:
         {**_github_routes([]), GITHUB_USER: httpx.Response(200, json={"login": "no-id"})},
         {**_github_routes([]), GITHUB_EMAILS: httpx.Response(200, json={"not": "a list"})},
         {**_github_routes([]), GITHUB_EMAILS: httpx.Response(200, text="not json")},
+        # A token response without an access token, or that is not a JSON object.
+        {**_github_routes([]), GITHUB_TOKEN: httpx.Response(200, json={"token_type": "bearer"})},
+        {**_github_routes([]), GITHUB_TOKEN: httpx.Response(200, json=["access-123"])},
+        {**_github_routes([]), GITHUB_TOKEN: httpx.Response(200, json={"access_token": 5})},
+        {**_github_routes([]), GITHUB_USER: httpx.Response(200, json=[{"id": 1}])},
     ],
 )
 async def test_github_failures_raise_provider_error_without_secrets(routes: Routes) -> None:
@@ -200,6 +206,9 @@ async def test_github_failures_raise_provider_error_without_secrets(routes: Rout
         {GOOGLE_TOKEN: httpx.Response(200, json=TOKEN), GOOGLE_USERINFO: httpx.Response(401)},
         {GOOGLE_TOKEN: httpx.Response(200, json=TOKEN),
          GOOGLE_USERINFO: httpx.Response(200, json={"email": "no-sub@example.com"})},
+        {GOOGLE_TOKEN: httpx.Response(200, json=TOKEN),
+         GOOGLE_USERINFO: httpx.Response(200, json=["not", "an", "object"])},
+        {GOOGLE_TOKEN: httpx.Response(200, json={"error": "invalid_grant"})},
     ],
 )
 async def test_google_failures_raise_provider_error_without_secrets(routes: Routes) -> None:
@@ -212,3 +221,14 @@ async def test_google_failures_raise_provider_error_without_secrets(routes: Rout
 def test_provider_repr_does_not_show_the_secret() -> None:
     assert SECRET not in repr(GoogleProvider("google-id", SECRET))
     assert SECRET not in repr(GitHubProvider("github-id", SECRET))
+
+
+async def test_unexpected_errors_at_the_provider_boundary_are_provider_errors() -> None:
+    def explode(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("something nobody anticipated access-123")
+
+    with pytest.raises(ProviderError) as info:
+        await _google(Recorder({GOOGLE_TOKEN: explode})).fetch_profile(
+            "the-code", "the-verifier", REDIRECT
+        )
+    assert str(info.value) == "google: RuntimeError"

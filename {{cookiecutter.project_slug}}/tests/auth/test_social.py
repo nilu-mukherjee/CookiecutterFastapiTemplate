@@ -27,7 +27,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.auth.oauth_providers import ProviderError, ProviderName, SocialProfile
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AppError
+{%- if bearer or jwt_cookie %}
+from app.core.security import create_access_token
+{%- endif %}
 from app.models import SocialAccount, User
+{%- if not tenancy %}
+from app.repositories.social_account import SocialAccountRepository
+{%- endif %}
 {%- if rbac and not tenancy %}
 from app.services.rbac import RbacService
 {%- endif %}
@@ -724,3 +730,116 @@ async def test_the_callback_is_rate_limited_like_everything_else(
         assert r.status_code == 400
     r = await anon_client.get(f"{OAUTH}/google/callback", params={"code": "c", "state": "s"})
     assert r.status_code == 429
+
+
+# --- the state cookie is cleared however the callback ends -------------------------
+
+
+async def test_a_422_on_the_callback_still_clears_the_state(
+    anon_client: AsyncClient, fake_providers: FakeProviders
+) -> None:
+    for oversized in ("state", "code"):
+        state, _ = await _start(anon_client)
+        params = {"code": "the-code", "state": state, oversized: "x" * 3000}
+        r = await anon_client.get(f"{OAUTH}/google/callback", params=params)
+        # Rejected by FastAPI's validation, before the endpoint runs: still cleared.
+        _assert_rejected(r, "validation_error", 422)
+    assert fake_providers[ProviderName.GOOGLE].calls == []
+
+
+async def test_an_unexpected_error_in_the_callback_still_clears_the_state(
+    anon_client: AsyncClient, fake_providers: FakeProviders
+) -> None:
+    fake_providers[ProviderName.GOOGLE].error = RuntimeError("bug with secret-ish detail")
+    state, _ = await _start(anon_client)
+    r = await _callback(anon_client, state)
+    _assert_rejected(r, "internal_error", 500)
+    assert "secret-ish" not in r.text
+
+
+# --- superusers never sign in through social login ---------------------------------
+
+
+async def test_a_superuser_is_never_linked_by_email(
+    maker: async_sessionmaker[AsyncSession], make_user: MakeUser
+) -> None:
+    await make_user("root@example.com", superuser=True)
+    error = await _resolve_error(maker, social_profile("root@example.com"))
+    assert error.code == "social_login_denied"
+    assert await _accounts(maker) == []
+
+
+async def test_a_linked_user_who_became_a_superuser_is_denied(
+    maker: async_sessionmaker[AsyncSession], make_user: MakeUser
+) -> None:
+    user = await make_user("social@example.com")
+    await _resolve(maker, social_profile("social@example.com"))
+    async with maker() as session:
+        row = await session.get(User, user.id)
+        assert row is not None
+        row.is_superuser = True
+        await session.commit()
+    error = await _resolve_error(maker, social_profile("social@example.com"))
+    assert error.code == "social_login_denied"
+{%- if not tenancy %}
+
+
+# --- sign-up is one transaction ------------------------------------------------------
+
+
+async def test_a_lost_link_race_leaves_no_orphan_user(
+    maker: async_sessionmaker[AsyncSession],
+    make_user: MakeUser,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOCIAL_ALLOW_SIGNUP", "true")
+    get_settings.cache_clear()
+    other = await make_user("other@example.com")
+    async with maker() as session:
+        session.add(
+            SocialAccount(user_id=other.id, provider="google", subject="subject-1", email="o")
+        )
+        await session.commit()
+
+    # Another request linked (google, subject-1) between our lookup and our insert.
+    async def not_found_yet(self: object, provider: str, subject: str) -> None:
+        return None
+
+    monkeypatch.setattr(SocialAccountRepository, "get_by_subject", not_found_yet)
+    error = await _resolve_error(maker, social_profile("new@example.com"))
+    assert error.code == "social_login_denied"
+    async with maker() as session:
+        orphan = await session.scalar(select(User).where(User.email == "new@example.com"))
+    assert orphan is None
+{%- endif %}
+{%- if bearer or jwt_cookie %}
+
+
+# --- an OAuth state and an access token are never interchangeable -------------------
+
+
+async def test_real_access_token_cannot_be_used_as_oauth_state_cookie(
+    anon_client: AsyncClient, make_user: MakeUser, fake_providers: FakeProviders
+) -> None:
+    user = await make_user("social@example.com")
+    token, _ = create_access_token(user.id)
+    _assert_rejected(await _callback(anon_client, "s", cookie=token))
+    assert fake_providers[ProviderName.GOOGLE].calls == []
+
+
+async def test_oauth_state_cookie_cannot_authenticate_as_bearer_or_cookie_token(
+    anon_client: AsyncClient,
+) -> None:
+    _, cookie = await _start(anon_client)
+    anon_client.cookies.clear()
+{%- if bearer %}
+    r = await anon_client.get(ME, headers={"Authorization": f"Bearer {cookie}"})
+    assert r.status_code == 401
+    assert r.json()["code"] == "invalid_credentials"
+{%- endif %}
+{%- if jwt_cookie %}
+    r = await anon_client.get(ME, headers={"Cookie": f"access_token={cookie}"})
+    assert r.status_code == 401
+    assert r.json()["code"] == "invalid_credentials"
+{%- endif %}
+{%- endif %}

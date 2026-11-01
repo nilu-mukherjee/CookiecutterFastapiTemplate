@@ -11,7 +11,6 @@ from typing import Any, Protocol
 from urllib.parse import urlencode
 
 import httpx
-from authlib.integrations.httpx_client import AsyncOAuth2Client, OAuthError
 
 from app.core.config import Settings
 
@@ -61,8 +60,8 @@ class OAuthProvider(Protocol):
         ...
 
 
-class _AuthlibProvider:
-    """Authorization URL plus the code exchange through Authlib's async httpx client."""
+class _HttpxProvider:
+    """Authorization URL, then the code exchange and profile calls over plain httpx."""
 
     name: ProviderName
     authorize_endpoint: str
@@ -97,49 +96,77 @@ class _AuthlibProvider:
         self, code: str, code_verifier: str, redirect_uri: str
     ) -> SocialProfile:
         try:
-            async with AsyncOAuth2Client(
-                client_id=self.client_id,
-                client_secret=self._client_secret,
-                token_endpoint_auth_method="client_secret_post",
-                redirect_uri=redirect_uri,
-                timeout=HTTP_TIMEOUT_SECONDS,
-                transport=self._transport,
+            async with httpx.AsyncClient(
+                timeout=HTTP_TIMEOUT_SECONDS, transport=self._transport
             ) as client:
-                await client.fetch_token(
-                    self.token_endpoint,
-                    grant_type="authorization_code",
-                    code=code,
-                    code_verifier=code_verifier,
-                )
-                return await self._profile(client)
-        except (OAuthError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-            # Only the exception type: messages can carry provider responses.
+                access_token = await self._exchange(client, code, code_verifier, redirect_uri)
+                return await self._profile(client, {"Authorization": f"Bearer {access_token}"})
+        except Exception as exc:
+            # The boundary to a third party: any failure (network, HTTP status, malformed or
+            # unexpected JSON, a bug in the parsing) is a provider error. Only the exception
+            # type is kept: messages can carry provider responses, codes or tokens.
             raise ProviderError(f"{self.name.value}: {type(exc).__name__}") from exc
 
-    async def _profile(self, client: Any) -> SocialProfile:
+    async def _exchange(
+        self, client: httpx.AsyncClient, code: str, code_verifier: str, redirect_uri: str
+    ) -> str:
+        """Authorization code + PKCE verifier -> access token (client_secret_post)."""
+        response = await client.post(
+            self.token_endpoint,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "code_verifier": code_verifier,
+                "client_id": self.client_id,
+                "client_secret": self._client_secret,
+            },
+            # GitHub answers form-encoded unless JSON is asked for.
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        token = _json_object(response)
+        # GitHub reports a bad code as 200 + {"error": ...}.
+        if "error" in token:
+            raise ValueError("token endpoint returned an error")
+        access_token = _text(token.get("access_token"))
+        if access_token is None:
+            raise ValueError("no access token")
+        return access_token
+
+    async def _profile(self, client: httpx.AsyncClient, auth: dict[str, str]) -> SocialProfile:
         raise NotImplementedError
 
 
-async def _get_json(client: Any, url: str, **kwargs: Any) -> Any:
-    response = await client.get(url, **kwargs)
+async def _get(client: httpx.AsyncClient, url: str, headers: dict[str, str]) -> Any:
+    response = await client.get(url, headers=headers)
     response.raise_for_status()
     return response.json()
+
+
+def _json_object(response: httpx.Response) -> dict[str, Any]:
+    data = response.json()
+    if not isinstance(data, dict):
+        raise TypeError("expected a JSON object")
+    return data
 
 
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-class GoogleProvider(_AuthlibProvider):
+class GoogleProvider(_HttpxProvider):
     name = ProviderName.GOOGLE
     authorize_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
     token_endpoint = "https://oauth2.googleapis.com/token"
     userinfo_endpoint = "https://openidconnect.googleapis.com/v1/userinfo"
     scope = "openid email profile"
 
-    async def _profile(self, client: Any) -> SocialProfile:
-        info = await _get_json(client, self.userinfo_endpoint)
-        subject = _text(info["sub"])
+    async def _profile(self, client: httpx.AsyncClient, auth: dict[str, str]) -> SocialProfile:
+        info = await _get(client, self.userinfo_endpoint, auth)
+        if not isinstance(info, dict):
+            raise TypeError("userinfo is not an object")
+        subject = _text(info.get("sub"))
         if subject is None:
             raise ValueError("no subject")
         return SocialProfile(
@@ -152,21 +179,23 @@ class GoogleProvider(_AuthlibProvider):
         )
 
 
-class GitHubProvider(_AuthlibProvider):
+class GitHubProvider(_HttpxProvider):
     name = ProviderName.GITHUB
     authorize_endpoint = "https://github.com/login/oauth/authorize"
     token_endpoint = "https://github.com/login/oauth/access_token"
     user_endpoint = "https://api.github.com/user"
     emails_endpoint = "https://api.github.com/user/emails"
     scope = "read:user user:email"
-    _headers = {"Accept": "application/vnd.github+json"}
 
-    async def _profile(self, client: Any) -> SocialProfile:
-        user = await _get_json(client, self.user_endpoint, headers=self._headers)
-        account_id = user["id"]
+    async def _profile(self, client: httpx.AsyncClient, auth: dict[str, str]) -> SocialProfile:
+        headers = {**auth, "Accept": "application/vnd.github+json"}
+        user = await _get(client, self.user_endpoint, headers)
+        if not isinstance(user, dict):
+            raise TypeError("user is not an object")
+        account_id = user.get("id")
         if not isinstance(account_id, int) or isinstance(account_id, bool):
             raise TypeError("id is not a number")
-        emails = await _get_json(client, self.emails_endpoint, headers=self._headers)
+        emails = await _get(client, self.emails_endpoint, headers)
         if not isinstance(emails, list):
             raise TypeError("emails is not a list")
         # The PRIMARY address, and only if GitHub verified it: never fall back to another.

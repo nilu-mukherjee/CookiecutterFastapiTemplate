@@ -26,10 +26,10 @@ from app.services.user import UserService
 
 def _denied() -> AppError:
 {%- if tenancy %}
-    # One answer for an inactive user, an inactive tenant and a user of another tenant
-    # than the one the login named: never reveal which (or where an account exists).
+    # One answer for an inactive user, an inactive tenant, a superuser and a user of another
+    # tenant than the one the login named: never reveal which (or where an account exists).
 {%- else %}
-    # One answer for an inactive user and for an account already linked elsewhere.
+    # One answer for an inactive user, a superuser and an account already linked elsewhere.
 {%- endif %}
     return AppError(403, "social_login_denied", "Social login is not available for this account")
 
@@ -117,7 +117,8 @@ class SocialLoginService:
     ) -> User:
         # None unless both the user and their tenant are active.
         user = await self.lookup.get_active_for_authentication(user_id)
-        if user is None:
+        # Platform superusers never sign in (or get linked) through a social account.
+        if user is None or user.is_superuser:
             raise _denied()
         if tenant_slug is not None and (named is None or user.tenant_id != named.id):
             raise _denied()
@@ -135,13 +136,16 @@ class SocialLoginService:
 
     @staticmethod
     def _active_user(user: User | None) -> User:
-        if user is None or not user.is_active:
+        # Superusers never sign in (or get linked) through a social account.
+        if user is None or not user.is_active or user.is_superuser:
             raise _denied()
         return user
 
     async def _sign_up(self, profile: SocialProfile, email: str) -> User:
         """A new user (default role{% if cookiecutter.use_rbac == "y" %}: member{% endif %}) linked to the provider account."""
-        user = await self.users.create(email, _unusable_password())
+        # Staged, not committed: the user and the link are one transaction (a lost link
+        # race rolls the user back too).
+        user = await self.users.stage(email, _unusable_password())
         await self._link(user, profile, email)
         return user
 {%- endif %}

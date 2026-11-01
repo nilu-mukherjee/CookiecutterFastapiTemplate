@@ -135,10 +135,3 @@ def set_state_cookie(response: Response, state: OAuthState) -> None:
 
 def clear_state_cookie(response: Response) -> None:
     clear_cookie(response, OAUTH_STATE_COOKIE, path=OAUTH_STATE_PATH, samesite="lax")
-
-
-def clear_state_cookie_header() -> str:
-    """The ``Set-Cookie`` value that clears the state cookie, for error responses."""
-    response = Response()
-    clear_state_cookie(response)
-    return response.headers["set-cookie"]

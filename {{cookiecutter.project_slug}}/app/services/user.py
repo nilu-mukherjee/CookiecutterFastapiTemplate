@@ -31,12 +31,14 @@ from app.services.rbac import DEFAULT_ROLE, RbacService
 logger = logging.getLogger("app.users")
 
 
-{% if tenancy %}def _email_taken() -> AppError:
+def _email_taken() -> AppError:
+{%- if tenancy %}
     # One answer whichever tenant holds the email: never reveal where it exists.
+{%- endif %}
     return AppError(409, "email_taken", "A user with this email already exists")
 
 
-class UserAuthentication:
+{% if tenancy %}class UserAuthentication:
     """The authentication stage: find the user behind a credential, before any tenant
     is known (the tenant is derived from the user). Unscoped by design; it only ever
     answers "which active user is this", never serves tenant data.
@@ -98,7 +100,6 @@ class UserService:
         roles: Sequence[str] | None = None,
 {%- endif %}
     ) -> User:
-{%- if tenancy %}
         user = await self.stage(
             email,
             password,
@@ -126,9 +127,16 @@ class UserService:
         roles: Sequence[str] | None = None,
 {%- endif %}
     ) -> User:
+{%- if tenancy %}
         """Validate and insert the user in this tenant WITHOUT committing.
 
-        Lets tenant creation add its first admin in the same transaction as the tenant.
+        Lets tenant creation add its first admin in the same transaction as the tenant
+        (and other callers add related rows in the same transaction as the user).
+        """
+{%- else %}
+        """Validate and insert the user WITHOUT committing.
+
+        Lets callers add related rows in the same transaction as the user.
         """
 {%- endif %}
         if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
@@ -149,7 +157,7 @@ class UserService:
             )
 {%- else %}
         if await self.repo.get_by_email(email) is not None:
-            raise AppError(409, "email_taken", "A user with this email already exists")
+            raise _email_taken()
 {%- endif %}
 {%- if rbac %}
         # Before the insert: unknown roles must not leave a user behind, and re-seeding a
@@ -162,7 +170,6 @@ class UserService:
             is_superuser=is_superuser,
             is_active=is_active,
         )
-{%- if tenancy %}
         try:
             await self.repo.add(user)
         except IntegrityError as exc:  # lost a race on the unique email index
@@ -172,18 +179,6 @@ class UserService:
         await self.rbac.assign(user.id, role_objs)
 {%- endif %}
         return user
-{%- else %}
-        try:
-            await self.repo.add(user)
-{%- if rbac %}
-            await self.rbac.assign(user.id, role_objs)
-{%- endif %}
-            await self.session.commit()
-        except IntegrityError as exc:  # lost a race on the unique email index
-            await self.session.rollback()
-            raise AppError(409, "email_taken", "A user with this email already exists") from exc
-        return user
-{%- endif %}
 
     async def get(self, user_id: UUID) -> User:
         user = await self.repo.get(user_id)

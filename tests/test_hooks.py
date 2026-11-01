@@ -401,7 +401,7 @@ SOCIAL_PATHS = [
     "tests/auth/test_social_providers.py",
 ]
 SOCIAL_NEEDLES = ("socialloginservice", "social_accounts", "social_account", "oauth_state",
-                  "oauthprovider", "authlib", "google_client", "github_client",
+                  "oauthprovider", "oauth_providers", "google_client", "github_client",
                   "oauth_redirect", "oauth_success_redirect", "social_allow_signup",
                   "/oauth", "allow_social_signup", "use_social_login")
 ALL_METHODS = dict(use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="y",
@@ -422,8 +422,8 @@ def test_social_off_leaves_no_social_code(tmp_path, tenancy):
     for rel in SOCIAL_PATHS + ["tests/tenancy/test_social.py"]:
         assert not (proj / rel).exists(), rel
     scan(proj, SOCIAL_NEEDLES)
-    # httpx stays a dev (test client) dependency only.
-    assert not any(d.startswith("httpx") for d in runtime_dependencies(proj))
+    # httpx stays a dev (test client) dependency only; no OAuth client library either.
+    assert not any(d.startswith(("httpx", "authlib")) for d in runtime_dependencies(proj))
 
 
 def test_bearer_only_without_social_has_no_cookie_code(tmp_path):
@@ -451,8 +451,10 @@ def test_social_with_bearer_only_generates_social_and_state_cookie_code(tmp_path
     assert "csrf" not in (proj / "app/core/auth/cookies.py").read_text().lower()
     assert "COOKIE_SECURE=" in (proj / ".env.example").read_text()
     deps = runtime_dependencies(proj)
-    for name in ("authlib", "httpx", "pyjwt"):
+    for name in ("httpx", "pyjwt"):
         assert any(d.startswith(name) for d in deps), name
+    # Plain httpx: no OAuth client library (Authlib warned on every import).
+    scan(proj, ("authlib",))
 
 
 def test_social_with_session_only_needs_pyjwt_for_the_state_cookie(tmp_path):
