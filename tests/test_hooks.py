@@ -2,6 +2,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -254,12 +256,26 @@ def test_api_key_without_human_method_aborts(tmp_path):
     assert "use_auth_api_key" in r.stderr
 
 
-def test_api_key_with_basic_only_ok(tmp_path):
-    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="n",
-            use_auth_session="n", use_auth_api_key="y", use_auth_basic="y",
-            use_social_login="n")
+HUMAN_FLAGS = ["use_auth_jwt_bearer", "use_auth_jwt_cookie", "use_auth_session", "use_auth_basic"]
+
+
+@pytest.mark.parametrize("human", HUMAN_FLAGS)
+def test_api_key_with_a_human_method_ok(tmp_path, human):
+    flags = {flag: ("y" if flag == human else "n") for flag in HUMAN_FLAGS}
+    r = gen(tmp_path, use_auth="y", use_auth_api_key="y", use_social_login="n", **flags)
     assert r.returncode == 0, r.stderr
     proj = tmp_path / "my_project"
-    assert not (proj / "app/api/v1/endpoints/auth.py").exists()
-    assert (proj / "app/core/time.py").exists()
-    assert 'down_revision = "0002"' in (proj / "alembic/versions/0004_api_keys.py").read_text()
+    assert (proj / "alembic/versions/0004_api_keys.py").exists()
+    assert (proj / "app/models/api_key.py").exists()
+    previous = "0003" if human == "use_auth_session" else "0002"
+    assert f'down_revision = "{previous}"' in (
+        proj / "alembic/versions/0004_api_keys.py"
+    ).read_text()
+
+
+def test_api_key_with_auth_off_is_ignored(tmp_path):
+    r = gen(tmp_path, use_auth="n", use_auth_api_key="y", use_rbac="n",
+            use_multitenancy="n", use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    assert "ignored" in (r.stdout + r.stderr)
+    assert not (tmp_path / "my_project/app/models/api_key.py").exists()
