@@ -71,12 +71,31 @@ PRUNE: dict[Key, list[str]] = {
     ],
     ("use_auth", "use_auth_session"): [
         "app/core/auth/session.py",
-        "app/core/time.py",
         "app/models/session.py",
         "app/repositories/session.py",
         "app/services/session.py",
         "alembic/versions/0003_sessions.py",
         "tests/auth/test_session.py",
+    ],
+    # The clock helper that tests patch, shared by the methods that compare timestamps.
+    ("use_auth", ("use_auth_session", "use_auth_api_key")): ["app/core/time.py"],
+    ("use_auth", "use_auth_api_key"): [
+        "app/core/auth/api_key.py",
+        "app/models/api_key.py",
+        "app/repositories/api_key.py",
+        "app/services/api_key.py",
+        "app/schemas/v1/api_key.py",
+        "app/api/v1/endpoints/api_keys.py",
+        "alembic/versions/0004_api_keys.py",
+        "tests/auth/test_api_key.py",
+    ],
+    ("use_auth", "use_auth_basic"): [
+        "app/core/auth/basic.py",
+        "tests/auth/test_basic.py",
+    ],
+    # Precedence between Bearer and the key/Basic methods needs Bearer and one of them.
+    ("use_auth", "use_auth_jwt_bearer", ("use_auth_api_key", "use_auth_basic")): [
+        "tests/auth/test_credential_precedence.py",
     ],
 }
 

@@ -183,3 +183,59 @@ def test_auth_session_off_leaves_no_session_code(tmp_path):
             text = path.read_text(errors="ignore").lower()
             for needle in needles:
                 assert needle not in text, f"{needle!r} left in {path.relative_to(proj)}"
+
+
+API_KEY_PATHS = [
+    "app/core/auth/api_key.py", "app/models/api_key.py", "app/repositories/api_key.py",
+    "app/services/api_key.py", "app/schemas/v1/api_key.py",
+    "app/api/v1/endpoints/api_keys.py", "alembic/versions/0004_api_keys.py",
+    "tests/auth/test_api_key.py",
+]
+BASIC_PATHS = ["app/core/auth/basic.py", "tests/auth/test_basic.py"]
+
+
+def scan(proj, needles):
+    for path in proj.rglob("*"):
+        if path.is_file() and ".git" not in path.parts and "__pycache__" not in path.parts:
+            text = path.read_text(errors="ignore").lower()
+            for needle in needles:
+                assert needle not in text, f"{needle!r} left in {path.relative_to(proj)}"
+
+
+def test_api_key_off_leaves_no_api_key_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session="y", use_auth_api_key="n", use_auth_basic="y",
+            use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in API_KEY_PATHS:
+        assert not (proj / rel).exists(), rel
+    assert (proj / "alembic/versions/0003_sessions.py").exists()
+    scan(proj, ("api_key", "api-key", "x-api-key", "apikeyauth", "apikeyheader"))
+
+
+def test_basic_off_leaves_no_basic_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session="y", use_auth_api_key="y", use_auth_basic="n",
+            use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in BASIC_PATHS:
+        assert not (proj / rel).exists(), rel
+    scan(proj, ("basic",))
+
+
+def test_api_key_only_has_no_login_endpoints_and_keeps_the_clock(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="n",
+            use_auth_session="n", use_auth_api_key="y", use_auth_basic="n",
+            use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in ("app/api/v1/endpoints/auth.py", "app/schemas/v1/auth.py",
+                "app/services/auth.py", "app/services/session.py",
+                "alembic/versions/0003_sessions.py"):
+        assert not (proj / rel).exists(), rel
+    for rel in API_KEY_PATHS + ["app/core/time.py"]:
+        assert (proj / rel).exists(), rel
+    # The chain skips the pruned 0003.
+    assert 'down_revision = "0002"' in (proj / "alembic/versions/0004_api_keys.py").read_text()

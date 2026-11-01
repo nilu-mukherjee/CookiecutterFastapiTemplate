@@ -16,8 +16,10 @@ class JWTBearerAuthenticator:
             return None
         scheme, _, token = header.partition(" ")
         if scheme.lower() != "bearer":
-            return None  # another scheme (e.g. Basic) is another authenticator's credential
+            return None  # another scheme is another authenticator's credential
         token = token.strip()
         if not token:
             raise invalid_token(_CHALLENGE)
-        return await principal_from_access_token(token, session, error_headers=_CHALLENGE)
+        return await principal_from_access_token(
+            token, session, auth_method="bearer", error_headers=_CHALLENGE
+        )

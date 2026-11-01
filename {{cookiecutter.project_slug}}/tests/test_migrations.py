@@ -22,7 +22,12 @@ EXPECTED_TABLES = {
 {%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_session == "y" %}
     "sessions",
 {%- endif %}
+{%- if cookiecutter.use_auth == "y" and cookiecutter.use_auth_api_key == "y" %}
+    "api_keys",
+{%- endif %}
 }
+# The newest revision that exists in this build (the chain skips pruned ones).
+EXPECTED_HEAD = "{{ '0004' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_api_key == 'y' else ('0003' if cookiecutter.use_auth == 'y' and cookiecutter.use_auth_session == 'y' else ('0002' if cookiecutter.use_auth == 'y' else '0001')) }}"
 
 
 @pytest.fixture
@@ -60,3 +65,14 @@ def test_migration_history_is_linear_with_a_single_head() -> None:
     # Every revision has exactly one parent: no branches, no merges.
     for rev in script.walk_revisions():
         assert not isinstance(rev.down_revision, tuple), rev.revision
+
+
+def test_revisions_form_one_unbroken_chain_ending_at_the_expected_head() -> None:
+    script = ScriptDirectory.from_config(_config())
+    assert script.get_heads() == [EXPECTED_HEAD]
+    # Walking from the head must reach the base without a gap: each down_revision exists.
+    chain = [rev.revision for rev in script.walk_revisions()]
+    assert chain[0] == EXPECTED_HEAD
+    assert chain[-1] == "0001"
+    assert len(chain) == len(set(chain))
+    assert len(chain) == len(list(script.walk_revisions()))

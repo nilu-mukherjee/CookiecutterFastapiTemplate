@@ -15,6 +15,6 @@ class JWTCookieAuthenticator:
         if not token:
             return None
         # Same validation as Bearer; no WWW-Authenticate challenge for cookies.
-        principal = await principal_from_access_token(token, session)
+        principal = await principal_from_access_token(token, session, auth_method="jwt_cookie")
         require_csrf(request, principal.user_id)
         return principal

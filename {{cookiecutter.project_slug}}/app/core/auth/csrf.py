@@ -7,8 +7,8 @@ the cookie (double submit) AND carry a valid MAC for the authenticated user, so
 an attacker who can plant a cookie (e.g. from a sibling subdomain) still cannot
 mint a token, and one user's token is useless for another user.
 
-Only cookie methods call this; Bearer/API-key/Basic requests are exempt because
-browsers never attach those credentials automatically.
+Only cookie methods call this; requests authenticated by an explicit header are exempt
+because browsers never attach such credentials automatically.
 """
 import base64
 import hashlib

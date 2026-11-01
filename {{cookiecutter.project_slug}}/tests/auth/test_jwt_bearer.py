@@ -172,7 +172,9 @@ async def test_health_stays_public(anon_client: AsyncClient) -> None:
 async def test_other_authorization_scheme_is_not_authenticated(
     anon_client: AsyncClient,
 ) -> None:
-    r = await anon_client.get("/api/v1/items", headers={"Authorization": "Basic Zm9vOmJhcg=="})
+    # A scheme that no enabled method owns.
+    headers = {"Authorization": "Negotiate Zm9vOmJhcg=="}
+    r = await anon_client.get("/api/v1/items", headers=headers)
     assert r.status_code == 401
     assert r.json()["code"] == "not_authenticated"
 

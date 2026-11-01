@@ -2,8 +2,14 @@
 {%- set bearer = auth and cookiecutter.use_auth_jwt_bearer == "y" -%}
 {%- set cookie = auth and cookiecutter.use_auth_jwt_cookie == "y" -%}
 {%- set session = auth and cookiecutter.use_auth_session == "y" -%}
+{%- set api_key = auth and cookiecutter.use_auth_api_key == "y" -%}
+{%- set basic = auth and cookiecutter.use_auth_basic == "y" -%}
 {%- set csrf = cookie or session -%}
-{% if auth %}import os
+{#- Builds with no login-capable method: the default client has to carry a key or Basic. -#}
+{%- set api_key_client = api_key and not (bearer or cookie or session) -%}
+{%- set basic_client = basic and not (bearer or cookie or session or api_key) -%}
+{% if basic %}import base64
+{% endif %}{% if auth %}import os
 
 # Settings are read when app.main is imported, so the test secret must be set first.
 os.environ["SECRET_KEY"] = "test-secret-key-not-for-production-" + "0123456789abcdef" * 4
@@ -25,7 +31,8 @@ from sqlalchemy.pool import StaticPool
 {% endif %}from app.db.session import get_session
 from app.main import create_app
 {% if auth %}from app.models import Base, User
-from app.services.user import UserService
+{% if api_key %}from app.services.api_key import ApiKeyService
+{% endif %}from app.services.user import UserService
 {% else %}from app.models import Base
 {% endif %}
 
@@ -72,6 +79,33 @@ def make_user(maker: async_sessionmaker[AsyncSession]) -> MakeUser:
             )
 
     return _make
+{%- if api_key %}
+
+
+MakeApiKey = Callable[..., Awaitable[str]]
+
+
+@pytest.fixture
+def make_api_key(maker: async_sessionmaker[AsyncSession]) -> MakeApiKey:
+    """Create an API key for the user through the real service; returns the raw key."""
+
+    async def _make(
+        user: User, name: str = "test key", *, expires_in_days: int | None = None
+    ) -> str:
+        async with maker() as session:
+            _, raw = await ApiKeyService(session).create(user.id, name, expires_in_days)
+        return raw
+
+    return _make
+{%- endif %}
+{%- if basic %}
+
+
+def basic_header(email: str, password: str = PASSWORD) -> dict[str, str]:
+    """``Authorization: Basic`` header for the credentials."""
+    raw = base64.b64encode(f"{email}:{password}".encode()).decode()
+    return {"Authorization": f"Basic {raw}"}
+{%- endif %}
 {%- if bearer %}
 
 
@@ -174,15 +208,23 @@ async def client(
     make_cookie_client: MakeCookieClient,
 {%- elif session %}
     make_session_client: MakeSessionClient,
+{%- elif api_key_client %}
+    make_api_key: MakeApiKey,
 {%- endif %}
 ) -> AsyncIterator[AsyncClient]:
     """Client authenticated as a normal (non-superuser) user."""
     user = await make_user("member@example.com")
+{%- if bearer or api_key_client or basic_client %}
 {%- if bearer %}
+    headers = auth_headers(user)
+{%- elif api_key_client %}
+    # No login endpoint in this build: the key is created directly through the service.
+    headers = {"X-API-Key": await make_api_key(user)}
+{%- else %}
+    headers = basic_header(user.email)
+{%- endif %}
     transport = ASGITransport(app=application)
-    async with AsyncClient(
-        transport=transport, base_url="http://test", headers=auth_headers(user)
-    ) as c:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=headers) as c:
         yield c
 {%- elif cookie %}
     # Real cookie login; sends the matching CSRF header by default.

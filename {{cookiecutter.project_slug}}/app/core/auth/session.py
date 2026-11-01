@@ -32,6 +32,11 @@ class SessionAuthenticator:
             raise _invalid_session()
         # After the session is validated, before it is allowed to act.
         require_csrf(request, user.id)
-        principal = Principal(user_id=user.id, tenant_id=None, is_superuser=user.is_superuser)
+        principal = Principal(
+            user_id=user.id,
+            tenant_id=None,
+            is_superuser=user.is_superuser,
+            auth_method="session",
+        )
         await service.touch(row)
         return principal
