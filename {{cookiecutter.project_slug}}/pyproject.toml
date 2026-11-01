@@ -39,7 +39,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py{{ cookiecutter.python_version|replace('.', '') }}"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

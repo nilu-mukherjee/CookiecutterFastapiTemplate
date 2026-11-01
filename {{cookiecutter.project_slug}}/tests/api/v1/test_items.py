@@ -38,3 +38,23 @@ async def test_item_not_found_returns_error_body_with_code_and_request_id_key(
     assert body["code"] == "not_found"
     assert isinstance(body["detail"], str)
     assert "request_id" in body
+
+
+async def test_v1_patch_null_name_is_422(client: AsyncClient) -> None:
+    created = (await client.post("/api/v1/items", json={"name": "a"})).json()
+    r = await client.patch(f"/api/v1/items/{created['id']}", json={"name": None})
+    assert r.status_code == 422
+    body = r.json()
+    assert body["code"] == "validation_error"
+    assert "name" in body["detail"]
+    assert "request_id" in body
+
+
+async def test_v1_patch_null_description_clears_it(client: AsyncClient) -> None:
+    created = (
+        await client.post("/api/v1/items", json={"name": "a", "description": "d"})
+    ).json()
+    r = await client.patch(f"/api/v1/items/{created['id']}", json={"description": None})
+    assert r.status_code == 200
+    assert r.json()["description"] is None
+    assert r.json()["name"] == "a"

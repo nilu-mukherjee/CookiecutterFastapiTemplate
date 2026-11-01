@@ -12,11 +12,16 @@ from app.models.base import Base
 
 
 @pytest_asyncio.fixture
-async def client() -> AsyncIterator[AsyncClient]:
+async def maker() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
+    yield async_sessionmaker(engine, expire_on_commit=False)
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def client(maker: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncClient]:
 
     async def override_session() -> AsyncIterator[AsyncSession]:
         async with maker() as session:
@@ -27,4 +32,3 @@ async def client() -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
-    await engine.dispose()

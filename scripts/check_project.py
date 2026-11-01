@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,10 +63,14 @@ def main() -> int:
             print("NOTICE: generated project has no pyproject.toml yet; "
                   "skipping uv sync / ruff / mypy / pytest")
             return 0
-        run([uv, "sync"], project)
-        run([uv, "run", "ruff", "check", "."], project)
-        run([uv, "run", "mypy", "app"], project)
-        run([uv, "run", "pytest", "-q"], project)
+        # Use the interpreter the project was rendered for, not uv's newest.
+        py = tomllib.loads((project / "pyproject.toml").read_text())["tool"]["mypy"]["python_version"]
+        run([uv, "sync", "--python", py], project)
+        run([uv, "run", "--python", py, "python", "-c",
+             "import sys; print('python', sys.version.split()[0])"], project)
+        run([uv, "run", "--python", py, "ruff", "check", "."], project)
+        run([uv, "run", "--python", py, "mypy", "app"], project)
+        run([uv, "run", "--python", py, "pytest", "-q"], project)
     except subprocess.CalledProcessError as e:
         print(f"FAILED: {e}", file=sys.stderr)
         return e.returncode or 1
