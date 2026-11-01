@@ -7,7 +7,7 @@ from pathlib import Path
 # The whole rendered cookiecutter context, so every cookiecutter.json key is
 # available to PRUNE without hand-maintained lines.
 # (parsed via json.loads because the context can contain JSON null.)
-FLAGS: dict[str, object] = json.loads(r'''{{ cookiecutter | jsonify }}''')
+FLAGS: dict[str, object] = json.loads(r"""{{ cookiecutter | jsonify }}""")
 
 # PRUNE maps a key to the list of paths (relative to the generated project)
 # removed when the key is off. Later tasks add entries here.

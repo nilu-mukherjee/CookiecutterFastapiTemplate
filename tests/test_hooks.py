@@ -65,3 +65,10 @@ def test_post_gen_prunes_from_full_context(tmp_path):
     assert not (proj / ".github").exists()
     # No prune-target paths exist yet for the use_docker=y case, so only
     # the n case is asserted at this stage.
+
+
+def test_post_gen_survives_triple_single_quotes_in_author(tmp_path):
+    r = gen(tmp_path, author="x'''y")
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / "my_project" / "README.md").exists()
+
