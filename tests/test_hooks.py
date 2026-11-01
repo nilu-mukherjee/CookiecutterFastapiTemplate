@@ -52,3 +52,16 @@ def test_defaults_generate(tmp_path):
     r = gen(tmp_path)
     assert r.returncode == 0, r.stderr
     assert (tmp_path / "my_project" / "README.md").exists()
+
+
+def test_post_gen_prunes_from_full_context(tmp_path):
+    # FLAGS in post_gen_project.py is the whole rendered context; PRUNE keys
+    # must resolve without a KeyError and the paths be absent when flag is n.
+    r = gen(tmp_path, use_docker="n", use_github_actions="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    assert (proj / "README.md").exists()
+    assert not (proj / "Dockerfile").exists()
+    assert not (proj / ".github").exists()
+    # No prune-target paths exist yet for the use_docker=y case, so only
+    # the n case is asserted at this stage.

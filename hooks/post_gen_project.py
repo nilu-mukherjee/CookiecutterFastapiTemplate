@@ -1,26 +1,13 @@
 """Prune files for disabled features, then git init."""
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
-# Flag values are rendered by cookiecutter (this file is a Jinja template).
-FLAGS = {
-    "use_docker": "{{ cookiecutter.use_docker }}",
-    "use_github_actions": "{{ cookiecutter.use_github_actions }}",
-    "use_auth": "{{ cookiecutter.use_auth }}",
-    "use_auth_jwt_bearer": "{{ cookiecutter.use_auth_jwt_bearer }}",
-    "use_auth_jwt_cookie": "{{ cookiecutter.use_auth_jwt_cookie }}",
-    "use_auth_session": "{{ cookiecutter.use_auth_session }}",
-    "use_auth_api_key": "{{ cookiecutter.use_auth_api_key }}",
-    "use_auth_basic": "{{ cookiecutter.use_auth_basic }}",
-    "use_social_login": "{{ cookiecutter.use_social_login }}",
-    "use_rbac": "{{ cookiecutter.use_rbac }}",
-    "use_multitenancy": "{{ cookiecutter.use_multitenancy }}",
-    "use_redis": "{{ cookiecutter.use_redis }}",
-    "use_celery": "{{ cookiecutter.use_celery }}",
-    "use_celery_beat": "{{ cookiecutter.use_celery_beat }}",
-    "use_flower": "{{ cookiecutter.use_flower }}",
-}
+# The whole rendered cookiecutter context, so every cookiecutter.json key is
+# available to PRUNE without hand-maintained lines.
+# (parsed via json.loads because the context can contain JSON null.)
+FLAGS: dict[str, object] = json.loads(r'''{{ cookiecutter | jsonify }}''')
 
 # PRUNE maps a key to the list of paths (relative to the generated project)
 # removed when the key is off. Later tasks add entries here.
