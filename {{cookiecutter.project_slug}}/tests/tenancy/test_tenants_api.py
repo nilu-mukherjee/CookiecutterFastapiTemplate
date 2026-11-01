@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import {% if rbac %}Role, {% endif %}Tenant, User
 from tests.conftest import {% if api_key %}MakeApiKey, {% endif %}MakeUser
-from tests.tenancy.conftest import METHODS, MethodClient
+from tests.tenancy.conftest import HUMAN_METHODS, MethodClient
 
 TENANTS = "/api/v1/tenants"
 NEW = {
@@ -29,7 +29,7 @@ async def root(
 ) -> AsyncClient:
     """A superuser (platform operator) of the system tenant."""
     user = await make_user("root@example.com", superuser=True, tenant=system_tenant)
-    return await method_client(METHODS[0], user)
+    return await method_client(HUMAN_METHODS[0], user)
 
 
 async def counts(maker: async_sessionmaker[AsyncSession]) -> tuple[int, ...]:
@@ -58,7 +58,8 @@ async def test_tenant_crud_superuser_only(
     denied = [client]
 {%- if rbac %}
     # A tenant admin holds every permission, yet tenant management is not one of them.
-    denied.append(await method_client(METHODS[0], await make_user("a@a.example", roles=["admin"])))
+    tenant_admin = await make_user("a@a.example", roles=["admin"])
+    denied.append(await method_client(HUMAN_METHODS[0], tenant_admin))
 {%- endif %}
     for method, url, body in requests:
         assert (await anon_client.request(method, url, json=body)).status_code == 401
@@ -100,7 +101,7 @@ async def test_new_tenant_admin_can_log_in_and_sees_an_empty_tenant(
         admin = (
             await session.scalars(select(User).where(User.email == "boss@acme.example"))
         ).one()
-    c = await method_client(METHODS[0], admin, NEW["admin_password"])
+    c = await method_client(HUMAN_METHODS[0], admin, NEW["admin_password"])
     me = (await c.get("/api/v1/users/me")).json()
     assert me["tenant_id"] == created["id"]
 {%- if rbac %}

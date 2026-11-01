@@ -1,4 +1,5 @@
 {%- set rbac = cookiecutter.use_rbac == "y" -%}
+{%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 from typing import Annotated
 
 {% if rbac %}from fastapi import APIRouter, Query
@@ -31,6 +32,10 @@ async def create_user(
     """Needs ``users:write``: there is no open registration.
 
     Creating a superuser (who bypasses every permission check) stays superuser-only.
+{%- if tenancy %}
+    The user is created in the caller's tenant, with roles of that tenant only; a
+    superuser can only be created from the system tenant (403 ``forbidden`` otherwise).
+{%- endif %}
     """
     if body.is_superuser and not principal.is_superuser:
         raise AppError(403, "forbidden", "Only a superuser can create a superuser")
@@ -41,7 +46,15 @@ async def create_user(
 {%- else %}
     body: UserCreate, service: UserServiceDep, _: SuperuserPrincipal
 ) -> UserRead:
+{%- if tenancy %}
+    """Superuser only: there is no open registration.
+
+    The user is created in the caller's tenant; superusers live in the system tenant,
+    which is the only tenant where another superuser can be created.
+    """
+{%- else %}
     """Superuser only: there is no open registration."""
+{%- endif %}
     user = await service.create(body.email, body.password, is_superuser=body.is_superuser)
     return UserRead.model_validate(user)
 {%- endif %}

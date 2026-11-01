@@ -35,6 +35,8 @@ from tests.conftest import (
 
 # The enabled methods, in precedence order. Isolation tests run once per method.
 METHODS = [{% for m in methods %}"{{ m }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+# Methods a person signs in with (an API key cannot manage tenants or API keys).
+HUMAN_METHODS = [m for m in METHODS if m != "api_key"]
 
 MethodClient = Callable[..., Awaitable[AsyncClient]]
 

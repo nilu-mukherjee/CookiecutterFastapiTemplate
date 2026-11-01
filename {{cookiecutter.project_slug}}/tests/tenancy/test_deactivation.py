@@ -8,8 +8,8 @@ import pytest_asyncio
 from httpx import AsyncClient, Response
 
 from app.models import Tenant
-from tests.conftest import {% if login %}PASSWORD, {% endif %}MakeTenant, MakeUser
-from tests.tenancy.conftest import METHODS, MethodClient
+from tests.conftest import {% if login %}PASSWORD, MakeTenant, {% endif %}MakeUser
+from tests.tenancy.conftest import HUMAN_METHODS, METHODS, MethodClient
 
 TENANTS = "/api/v1/tenants"
 
@@ -19,7 +19,7 @@ async def root(
     method_client: MethodClient, make_user: MakeUser, system_tenant: Tenant
 ) -> AsyncClient:
     user = await make_user("root@example.com", superuser=True, tenant=system_tenant)
-    return await method_client(METHODS[0], user)
+    return await method_client(HUMAN_METHODS[0], user)
 
 
 def assert_rejected(r: Response) -> None:
