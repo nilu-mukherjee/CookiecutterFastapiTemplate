@@ -357,9 +357,7 @@ TENANCY_NEEDLES = ("tenantscopedrepository", "tenantmixin", "tenant_id", "tenant
 def test_multitenancy_off_leaves_no_tenancy_code(tmp_path, rbac):
     r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="y",
             use_auth_session="y", use_auth_api_key="y", use_auth_basic="y",
-            use_social_login="y", use_rbac=rbac, use_multitenancy="n",
-            # The Celery example task takes an explicit tenant_id in every build.
-            use_celery="n", use_celery_beat="n", use_flower="n")
+            use_social_login="y", use_rbac=rbac, use_multitenancy="n")
     assert r.returncode == 0, r.stderr
     proj = tmp_path / "my_project"
     for rel in TENANCY_PATHS:

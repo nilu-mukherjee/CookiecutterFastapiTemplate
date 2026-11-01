@@ -7,7 +7,8 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import AsyncClient
 from kombu.exceptions import OperationalError
-
+{% if cookiecutter.use_redis == "y" %}from redis.exceptions import ConnectionError as RedisConnectionError
+{% endif %}
 {% if tenancy %}from app.models import Tenant
 {% endif %}from app.worker.tasks.example import example_task
 {% if rbac %}from tests.conftest import LoginClient, MakeUser
@@ -35,7 +36,7 @@ async def make_item(client: AsyncClient) -> str:
     return str(r.json()["id"])
 
 
-async def test_process_endpoint_enqueues_with_tenant_id(
+async def test_process_endpoint_enqueues{% if tenancy %}_with_tenant_id{% endif %}(
     client: AsyncClient, calls: Calls{% if tenancy %}, tenant: Tenant{% endif %}
 ) -> None:
     item_id = await make_item(client)
@@ -50,8 +51,6 @@ async def test_process_endpoint_enqueues_with_tenant_id(
     assert calls[0]["kwargs"] == {
 {%- if tenancy %}
         "tenant_id": str(tenant.id),
-{%- else %}
-        "tenant_id": None,
 {%- endif %}
         "payload": {"item_id": item_id},
     }
@@ -131,3 +130,23 @@ async def test_broker_oserror_is_503(
     r = await client.post(f"/api/v1/items/{item_id}/process")
     assert r.status_code == 503
     assert r.json()["code"] == "queue_unavailable"
+{%- if cookiecutter.use_redis == "y" %}
+
+
+async def test_redis_outage_on_enqueue_is_503(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The result backend talks to Redis while publishing; RedisError is not an OSError.
+    item_id = await make_item(client)
+
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        raise RedisConnectionError("redis://:secret-pw@redis.internal:6379/1 boom")
+
+    monkeypatch.setattr(example_task, "apply_async", broken)
+    r = await client.post(f"/api/v1/items/{item_id}/process")
+    assert r.status_code == 503
+    assert r.json()["code"] == "queue_unavailable"
+    assert r.json()["detail"] == "Task queue is unavailable"
+    assert "secret-pw" not in r.text
+    assert "redis" not in r.text.lower()
+{%- endif %}

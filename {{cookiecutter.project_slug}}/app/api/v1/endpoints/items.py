@@ -1,6 +1,7 @@
 {%- set rbac = cookiecutter.use_auth == "y" and cookiecutter.use_rbac == "y" -%}
 {%- set tenancy = cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" -%}
 {%- set celery = cookiecutter.use_celery == "y" -%}
+{%- set redis = cookiecutter.use_redis == "y" -%}
 {% if celery %}import logging
 {% endif %}from typing import Annotated
 from uuid import UUID
@@ -8,7 +9,8 @@ from uuid import UUID
 {% if cookiecutter.use_auth == "y" %}from fastapi import APIRouter, Depends, Query, Response
 {% else %}from fastapi import APIRouter, Query, Response
 {% endif %}{% if celery %}from kombu.exceptions import OperationalError
-from starlette.concurrency import run_in_threadpool
+{% if redis %}from redis.exceptions import RedisError
+{% endif %}from starlette.concurrency import run_in_threadpool
 {% endif %}
 {% if cookiecutter.use_auth == "y" %}from app.api.deps import ItemServiceDep, {% if tenancy and celery %}TenantId, {% endif %}get_current_principal{% if rbac %}, require_permission{% endif %}
 {% else %}from app.api.deps import ItemServiceDep
@@ -90,12 +92,14 @@ async def process_item(
         result = await run_in_threadpool(
             example_task.apply_async,
             kwargs={
-                "tenant_id": {% if tenancy %}str(tenant_id){% else %}None{% endif %},
+{%- if tenancy %}
+                "tenant_id": str(tenant_id),
+{%- endif %}
                 "payload": {"item_id": str(item_id)},
             },
             retry=False,
         )
-    except (OperationalError, OSError) as exc:
+    except (OperationalError, OSError{% if redis %}, RedisError{% endif %}) as exc:
         # Log the class only: the message can contain the broker URL and credentials.
         logger.warning("task queue unavailable: %s", type(exc).__name__)
         raise AppError(503, "queue_unavailable", "Task queue is unavailable") from exc

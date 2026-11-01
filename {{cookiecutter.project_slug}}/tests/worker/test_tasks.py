@@ -1,19 +1,22 @@
 {%- set redis = cookiecutter.use_redis == "y" -%}
+{%- set tenancy = cookiecutter.use_auth == "y" and cookiecutter.use_multitenancy == "y" -%}
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID{% if tenancy %}, uuid4{% endif %}
 
-from app.core.config import get_settings
+{% if tenancy %}import pytest
+
+{% endif %}from app.core.config import get_settings
 from app.worker.celery_app import celery_app, create_celery_app
 from app.worker.tasks.example import example_task
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_example_task_returns_payload_with_tenant() -> None:
+{% if tenancy %}def test_example_task_returns_payload_with_tenant() -> None:
     tenant_id = str(uuid4())
     result = example_task.apply_async(
         kwargs={"tenant_id": tenant_id, "payload": {"item_id": "x"}}
@@ -21,10 +24,13 @@ def test_example_task_returns_payload_with_tenant() -> None:
     assert result == {"tenant_id": tenant_id, "payload": {"item_id": "x"}, "processed": True}
 
 
-def test_example_task_accepts_no_tenant() -> None:
-    result = example_task.apply_async(kwargs={"tenant_id": None, "payload": {}}).get()
-    assert result == {"tenant_id": None, "payload": {}, "processed": True}
-
+def test_example_task_requires_a_tenant_id() -> None:
+    with pytest.raises(TypeError):
+        example_task.apply_async(kwargs={"payload": {}}).get()
+{% else %}def test_example_task_returns_payload() -> None:
+    result = example_task.apply_async(kwargs={"payload": {"item_id": "x"}}).get()
+    assert result == {"payload": {"item_id": "x"}, "processed": True}
+{% endif %}
 
 def test_example_task_has_a_fixed_name() -> None:
     assert example_task.name == "app.worker.tasks.example.example_task"
@@ -89,5 +95,7 @@ def test_importing_the_app_does_not_connect_to_the_broker() -> None:
 
 
 def test_task_ids_are_uuids() -> None:
-    result = example_task.apply_async(kwargs={"tenant_id": None, "payload": {}})
+    result = example_task.apply_async(
+        kwargs={% if tenancy %}{"tenant_id": str(uuid4()), "payload": {}}{% else %}{"payload": {}}{% endif %}
+    )
     assert str(UUID(result.id)) == result.id
