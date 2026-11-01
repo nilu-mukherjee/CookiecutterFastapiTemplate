@@ -20,7 +20,7 @@ from app.core.auth.session import SessionAuthenticator
 {%- endif %}
 
 # The first authenticator that finds its credential decides (no fall-through).
-# Precedence is fixed; only the enabled methods are listed.
+# Order: {% set names = [] %}{% if bearer %}{% set _ = names.append("Bearer") %}{% endif %}{% if api_key %}{% set _ = names.append("API key") %}{% endif %}{% if session %}{% set _ = names.append("session cookie") %}{% endif %}{% if jwt_cookie %}{% set _ = names.append("JWT cookie") %}{% endif %}{% if basic %}{% set _ = names.append("Basic") %}{% endif %}{{ names | join(", ") }}.
 AUTHENTICATORS: list[Authenticator] = [
 {%- if bearer %}
     JWTBearerAuthenticator(),

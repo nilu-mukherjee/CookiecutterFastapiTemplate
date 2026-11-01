@@ -5,9 +5,8 @@
 {%- set api_key = auth and cookiecutter.use_auth_api_key == "y" -%}
 {%- set basic = auth and cookiecutter.use_auth_basic == "y" -%}
 {%- set csrf = cookie or session -%}
-{#- Builds with no login-capable method: the default client has to carry a key or Basic. -#}
-{%- set api_key_client = api_key and not (bearer or cookie or session) -%}
-{%- set basic_client = basic and not (bearer or cookie or session or api_key) -%}
+{#- Basic-only login-less builds: the default client sends a real Basic header. -#}
+{%- set basic_client = basic and not (bearer or cookie or session) -%}
 {% if basic %}import base64
 {% endif %}{% if auth %}import os
 
@@ -208,18 +207,13 @@ async def client(
     make_cookie_client: MakeCookieClient,
 {%- elif session %}
     make_session_client: MakeSessionClient,
-{%- elif api_key_client %}
-    make_api_key: MakeApiKey,
 {%- endif %}
 ) -> AsyncIterator[AsyncClient]:
     """Client authenticated as a normal (non-superuser) user."""
     user = await make_user("member@example.com")
-{%- if bearer or api_key_client or basic_client %}
+{%- if bearer or basic_client %}
 {%- if bearer %}
     headers = auth_headers(user)
-{%- elif api_key_client %}
-    # No login endpoint in this build: the key is created directly through the service.
-    headers = {"X-API-Key": await make_api_key(user)}
 {%- else %}
     headers = basic_header(user.email)
 {%- endif %}

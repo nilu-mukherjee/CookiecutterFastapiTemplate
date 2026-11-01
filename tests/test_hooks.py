@@ -194,9 +194,18 @@ API_KEY_PATHS = [
 BASIC_PATHS = ["app/core/auth/basic.py", "tests/auth/test_basic.py"]
 
 
+CODE_SUFFIXES = {".py", ".toml", ".ini", ".example", ".yml", ".yaml", ".json"}
+API_KEY_NEEDLES = ("api_key", "api-key", "use_auth_api_key", "apikeyauth", "apikeyheader",
+                  "apikeyservice", "apikeyauthenticator")
+BASIC_NEEDLES = ("basicauth", "httpbasic", "use_auth_basic", "basic_scheme", "basicscheme",
+                 '"basic"', "'basic'", "basicauthenticator")
+
+
 def scan(proj, needles):
+    """Needles must not appear in any code/config file (README, docs and locks are exempt)."""
     for path in proj.rglob("*"):
-        if path.is_file() and ".git" not in path.parts and "__pycache__" not in path.parts:
+        if (path.is_file() and ".git" not in path.parts and "__pycache__" not in path.parts
+                and path.suffix in CODE_SUFFIXES and not path.name.endswith(".lock")):
             text = path.read_text(errors="ignore").lower()
             for needle in needles:
                 assert needle not in text, f"{needle!r} left in {path.relative_to(proj)}"
@@ -211,7 +220,7 @@ def test_api_key_off_leaves_no_api_key_code(tmp_path):
     for rel in API_KEY_PATHS:
         assert not (proj / rel).exists(), rel
     assert (proj / "alembic/versions/0003_sessions.py").exists()
-    scan(proj, ("api_key", "api-key", "x-api-key", "apikeyauth", "apikeyheader"))
+    scan(proj, API_KEY_NEEDLES + ("x-api-key",))
 
 
 def test_basic_off_leaves_no_basic_code(tmp_path):
@@ -222,20 +231,35 @@ def test_basic_off_leaves_no_basic_code(tmp_path):
     proj = tmp_path / "my_project"
     for rel in BASIC_PATHS:
         assert not (proj / rel).exists(), rel
-    scan(proj, ("basic",))
+    scan(proj, BASIC_NEEDLES)
 
 
-def test_api_key_only_has_no_login_endpoints_and_keeps_the_clock(tmp_path):
-    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="n",
-            use_auth_session="n", use_auth_api_key="y", use_auth_basic="n",
+def test_bearer_only_build_contains_no_disabled_method_needles(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y", use_auth_jwt_cookie="n",
+            use_auth_session="n", use_auth_api_key="n", use_auth_basic="n",
             use_social_login="n")
     assert r.returncode == 0, r.stderr
     proj = tmp_path / "my_project"
-    for rel in ("app/api/v1/endpoints/auth.py", "app/schemas/v1/auth.py",
-                "app/services/auth.py", "app/services/session.py",
-                "alembic/versions/0003_sessions.py"):
-        assert not (proj / rel).exists(), rel
-    for rel in API_KEY_PATHS + ["app/core/time.py"]:
-        assert (proj / rel).exists(), rel
-    # The chain skips the pruned 0003.
+    scan(proj, API_KEY_NEEDLES + BASIC_NEEDLES + ("x-api-key", "sessionauthenticator",
+                                                  "jwtcookieauthenticator"))
+    order = (proj / "app/core/auth/__init__.py").read_text()
+    assert "# Order: Bearer." in order
+
+
+def test_api_key_without_human_method_aborts(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="n",
+            use_auth_session="n", use_auth_api_key="y", use_auth_basic="n",
+            use_social_login="n")
+    assert r.returncode != 0
+    assert "use_auth_api_key" in r.stderr
+
+
+def test_api_key_with_basic_only_ok(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="n", use_auth_jwt_cookie="n",
+            use_auth_session="n", use_auth_api_key="y", use_auth_basic="y",
+            use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    assert not (proj / "app/api/v1/endpoints/auth.py").exists()
+    assert (proj / "app/core/time.py").exists()
     assert 'down_revision = "0002"' in (proj / "alembic/versions/0004_api_keys.py").read_text()

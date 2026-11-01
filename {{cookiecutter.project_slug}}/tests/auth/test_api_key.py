@@ -3,7 +3,8 @@
 {%- set session = cookiecutter.use_auth_session == "y" -%}
 {%- set basic = cookiecutter.use_auth_basic == "y" -%}
 {#- How the tests act as a "human" (a non-API-key principal) in this build. -#}
-{%- set human = "bearer" if bearer else ("cookie" if cookie else ("session" if session else ("basic" if basic else "override"))) -%}
+{#- The pre-gen hook guarantees one of them is on when API keys are. -#}
+{%- set human = "bearer" if bearer else ("cookie" if cookie else ("session" if session else "basic")) -%}
 import hashlib
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -14,14 +15,12 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI{% if human == "override" %}, Request{% endif %}
+from fastapi import FastAPI
 from httpx import {% if human not in ("cookie", "session") %}ASGITransport, {% endif %}AsyncClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-{% if human == "override" %}from app.api.deps import SessionDep, get_current_principal
-from app.core.auth import Principal
-{% endif %}from app.models import ApiKey, User
+from app.models import ApiKey, User
 {%- set names = ["MakeApiKey", "MakeUser"] -%}
 {%- if human == "cookie" %}{% set _ = names.append("MakeCookieClient") %}{% endif -%}
 {%- if human == "session" %}{% set _ = names.append("MakeSessionClient") %}{% endif -%}
@@ -85,21 +84,6 @@ async def make_human(
     auth_headers: Callable[[User], dict[str, str]],
 {%- endif %}
 ) -> AsyncIterator[MakeHuman]:
-{%- if human == "override" %}
-    # No human login method exists in this build (API keys are the only credential), so
-    # the principal of the management endpoints is injected; the header picks the user.
-    async def as_test_user(request: Request, session: SessionDep) -> Principal:
-        if "x-test-user" not in request.headers:  # an API key request: the real thing
-            return await get_current_principal(request, session, None)
-        return Principal(
-            user_id=UUID(request.headers["x-test-user"]),
-            tenant_id=None,
-            is_superuser=False,
-            auth_method="bearer",
-        )
-
-    application.dependency_overrides[get_current_principal] = as_test_user
-{%- endif %}
     clients: list[AsyncClient] = []
 
     async def _make(email: str = "owner@example.com", **user_kwargs: Any) -> Human:
@@ -111,10 +95,8 @@ async def make_human(
 {%- else %}
 {%- if human == "bearer" %}
         headers = auth_headers(user)
-{%- elif human == "basic" %}
-        headers = basic_header(email)
 {%- else %}
-        headers = {"X-Test-User": str(user.id)}
+        headers = basic_header(email)
 {%- endif %}
         c = AsyncClient(
             transport=ASGITransport(app=application), base_url="http://test", headers=headers
