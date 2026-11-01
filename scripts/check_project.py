@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parent.parent
 FLAG_KEYS = [
     "use_docker", "use_github_actions", "use_auth", "use_auth_jwt_bearer",
     "use_auth_jwt_cookie", "use_auth_session", "use_auth_api_key", "use_auth_basic",
-    "use_social_login", "use_rbac", "use_multitenancy", "use_redis", "use_celery",
+    "use_social_login", "use_rbac", "use_multitenancy", "use_redis", "use_sse",
+    "use_long_polling", "use_websocket", "use_graphql", "use_grpc", "use_celery",
     "use_celery_beat", "use_flower",
 ]
 PRESETS = {

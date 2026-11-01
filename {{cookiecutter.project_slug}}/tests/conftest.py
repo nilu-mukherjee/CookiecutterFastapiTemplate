@@ -8,6 +8,7 @@
 {%- set csrf = cookie or session -%}
 {%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
 {%- set social = auth and cookiecutter.use_social_login == "y" -%}
+{%- set realtime = cookiecutter.use_sse == "y" or cookiecutter.use_long_polling == "y" or cookiecutter.use_websocket == "y" -%}
 {#- Basic-only login-less builds: the default client sends a real Basic header. -#}
 {%- set basic_client = basic and not (bearer or cookie or session) -%}
 {% if basic %}import base64
@@ -21,11 +22,11 @@ from collections.abc import AsyncIterator, Awaitable, Callable{% if social %}, I
 {% endif %}{% if social %}from urllib.parse import parse_qs, urlencode, urlsplit
 {% endif %}{% else %}from collections.abc import AsyncIterator
 {% endif %}
-{% if cookiecutter.use_redis == "y" or auth %}import pytest
+{% if cookiecutter.use_redis == "y" or auth or realtime %}import pytest
 {% endif %}import pytest_asyncio
 {% if cookiecutter.use_redis == "y" %}from fakeredis import FakeServer
 from fakeredis.aioredis import FakeRedis
-{% endif %}{% if auth %}from fastapi import FastAPI
+{% endif %}{% if auth or realtime %}from fastapi import FastAPI
 {% endif %}from httpx import ASGITransport, AsyncClient{% if social %}, Response{% endif %}
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -38,11 +39,12 @@ from app.core.config import get_settings
 {% endif %}from app.db.session import get_session
 from app.main import create_app
 {% if auth %}from app.models import Base, {% if tenancy %}Tenant, {% endif %}User
-{% if api_key %}from app.services.api_key import ApiKeyService
+{% else %}from app.models import Base
+{% endif %}{% if realtime %}from app.realtime import create_broker
+{% endif %}{% if auth %}{% if api_key %}from app.services.api_key import ApiKeyService
 {% endif %}{% if rbac %}from app.services.rbac import RbacService
 {% endif %}{% if tenancy %}from app.services.tenant import TenantService
 {% endif %}from app.services.user import UserService
-{% else %}from app.models import Base
 {% endif %}
 
 @pytest_asyncio.fixture
@@ -67,7 +69,7 @@ async def maker() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
 {%- endif %}
     yield sessions
     await engine.dispose()
-{%- if auth %}
+{%- if auth or realtime %}
 
 
 @pytest.fixture
@@ -79,7 +81,14 @@ def application(maker: async_sessionmaker[AsyncSession]) -> FastAPI:
 
     app = create_app()
     app.dependency_overrides[get_session] = override_session
+{%- if realtime %}
+    # The lifespan creates the broker in a running app; the tests' app is not started.
+    app.state.broker = create_broker()
+{%- endif %}
     return app
+{%- endif %}
+{%- if auth %}
+
 
 
 {% if tenancy %}MakeTenant = Callable[..., Awaitable[Tenant]]
@@ -402,6 +411,14 @@ async def client_b(
     yield await make_session_client(user.email)
 {%- endif %}
 {%- endif %}
+{%- elif realtime %}
+
+
+@pytest_asyncio.fixture
+async def client(application: FastAPI) -> AsyncIterator[AsyncClient]:
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
 {%- else %}
 
 
@@ -425,9 +442,16 @@ async def client(maker: async_sessionmaker[AsyncSession]) -> AsyncIterator[Async
 def fake_redis(monkeypatch: pytest.MonkeyPatch) -> FakeServer:
     """Every test gets its own in-process Redis; get_redis() returns it."""
     server = FakeServer()
+{%- if realtime %}
+    client = FakeRedis(server=server, decode_responses=True)
+    monkeypatch.setattr(redis_module, "_client", client)
+    # The broker's blocking-read client (a real one has no read timeout).
+    monkeypatch.setattr(redis_module, "_stream_client", client)
+{%- else %}
     monkeypatch.setattr(
         redis_module, "_client", FakeRedis(server=server, decode_responses=True)
     )
+{%- endif %}
     return server
 {%- endif %}
 {%- if social %}

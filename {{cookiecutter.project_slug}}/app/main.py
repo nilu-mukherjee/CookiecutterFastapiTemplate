@@ -2,7 +2,8 @@
 {%- set rbac = auth and cookiecutter.use_rbac == "y" -%}
 {%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
 {%- set redis = cookiecutter.use_redis == "y" -%}
-{%- set lifespan = auth or redis -%}
+{%- set realtime = cookiecutter.use_sse == "y" or cookiecutter.use_long_polling == "y" or cookiecutter.use_websocket == "y" -%}
+{%- set lifespan = auth or redis or realtime -%}
 {% if lifespan %}from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,6 +17,11 @@ from app.core.logging import configure_logging
 from app.core.middleware import register_middleware
 {%- if auth %}
 from app.db.session import get_sessionmaker
+{%- endif %}
+{%- if realtime %}
+from app.realtime import create_broker
+{%- endif %}
+{%- if auth %}
 {%- if rbac %}
 from app.services.rbac import RbacService
 {%- endif %}
@@ -28,7 +34,7 @@ from app.services.user import UserService
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+async def lifespan({% if realtime %}application{% else %}_{% endif %}: FastAPI) -> AsyncIterator[None]:
 {%- if auth %}
     async with get_sessionmaker()() as session:
 {%- if tenancy %}
@@ -44,6 +50,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 {%- endif %}
         await UserService(session).bootstrap_superuser()
 {%- endif %}
+{%- endif %}
+{%- if realtime %}
+    # One broker per process, chosen here: Redis Streams with Redis, else in-memory.
+    application.state.broker = create_broker()
 {%- endif %}
     yield
 {%- if redis %}

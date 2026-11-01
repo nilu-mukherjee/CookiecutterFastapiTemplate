@@ -23,6 +23,9 @@ JWT_METHODS = ("use_auth_jwt_bearer", "use_auth_jwt_cookie")
 COOKIE_METHODS = ("use_auth_jwt_cookie", "use_auth_session")
 # Methods that log in through /auth/login (JWT pairs, or a server-side session).
 LOGIN_METHODS = (*JWT_METHODS, "use_auth_session")
+# The communication methods that consume the realtime event broker. GraphQL and gRPC
+# use it when it exists but do not, on their own, cause it to be generated.
+REALTIME = ("use_sse", "use_long_polling", "use_websocket")
 PRUNE: dict[Key, list[str]] = {
     "use_docker": ["Dockerfile", "docker-compose.yml", ".dockerignore"],
     "use_github_actions": [".github"],
@@ -30,6 +33,19 @@ PRUNE: dict[Key, list[str]] = {
         "app/cache",
         "app/middleware/rate_limit_redis.py",
         "tests/middleware/test_rate_limit_redis.py",
+    ],
+    # The broker exists when ANY realtime method is on (an any-of group).
+    (REALTIME,): ["app/realtime", "tests/realtime"],
+    ("use_redis", REALTIME): ["app/realtime/redis_broker.py"],
+    "use_sse": [
+        "app/api/v1/endpoints/events.py",
+        "tests/api/v1/streaming.py",
+        "tests/api/v1/test_sse.py",
+    ],
+    "use_long_polling": [
+        "app/api/v1/endpoints/poll.py",
+        "app/schemas/v1/event.py",
+        "tests/api/v1/test_poll.py",
     ],
     "use_celery": ["app/worker", "tests/worker"],
     ("use_celery", "use_celery_beat"): ["tests/worker/test_beat.py"],

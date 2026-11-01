@@ -8,6 +8,8 @@
 {%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
 {%- set social = auth and cookiecutter.use_social_login == "y" -%}
 {%- set use_jwt = bearer or jwt_cookie -%}
+{%- set realtime = cookiecutter.use_sse == "y" or cookiecutter.use_long_polling == "y" or cookiecutter.use_websocket == "y" -%}
+{%- set stream = cookiecutter.use_sse == "y" or cookiecutter.use_long_polling == "y" -%}
 {%- set schemes = [] -%}
 {%- if bearer %}{% set _ = schemes.extend(["HTTPAuthorizationCredentials", "HTTPBearer"]) %}{% endif -%}
 {%- if jwt_cookie or session %}{% set _ = schemes.append("APIKeyCookie") %}{% endif -%}
@@ -24,7 +26,7 @@
 {%- endfor %}
 )
 {% else %}from fastapi.security import {{ imported }}
-{% endif %}{% elif auth %}from fastapi import Depends, Request
+{% endif %}{% elif auth or realtime %}from fastapi import Depends, Request
 {% else %}from fastapi import Depends
 {% endif %}{% if cookiecutter.use_redis == "y" %}from redis.asyncio import Redis
 {% endif %}from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +40,8 @@
 from app.core.config import get_settings
 {% endif %}{% if auth %}from app.core.exceptions import AppError
 {% endif %}from app.db.session import get_session
-{% if api_key %}from app.services.api_key import ApiKeyService
+{% if realtime %}from app.realtime.broker import EventBroker{% if stream %}, channel_for{% endif %}
+{% endif %}{% if api_key %}from app.services.api_key import ApiKeyService
 {% endif %}{% if use_jwt %}from app.services.auth import AuthService
 {% endif %}from app.services.item import ItemService
 {% if rbac %}from app.services.rbac import RbacService
@@ -48,14 +51,37 @@ from app.core.config import get_settings
 {% endif %}{% if auth %}from app.services.user import UserService
 {% endif %}
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+{%- if realtime %}
+
+
+def get_broker(request: Request) -> EventBroker:
+    """The process's event broker, created at startup (lifespan)."""
+    broker: EventBroker = request.app.state.broker
+    return broker
+
+
+BrokerDep = Annotated[EventBroker, Depends(get_broker)]
+{%- endif %}
 {%- if not tenancy %}
 
 
-def get_item_service(session: SessionDep) -> ItemService:
+{% if realtime %}def get_item_service(session: SessionDep, broker: BrokerDep) -> ItemService:
+    return ItemService(session, broker)
+{% else %}def get_item_service(session: SessionDep) -> ItemService:
     return ItemService(session)
-
+{% endif %}
 
 ItemServiceDep = Annotated[ItemService, Depends(get_item_service)]
+{%- if stream %}
+
+
+def get_event_channel() -> str:
+    """The channel the item events are published to."""
+    return channel_for(None)
+
+
+ChannelDep = Annotated[str, Depends(get_event_channel)]
+{%- endif %}
 {%- endif %}
 {%- if cookiecutter.use_redis == "y" %}
 
@@ -229,11 +255,25 @@ def get_tenant_id(principal: CurrentPrincipal) -> UUID:
 TenantId = Annotated[UUID, Depends(get_tenant_id)]
 
 
-def get_item_service(session: SessionDep, tenant_id: TenantId) -> ItemService:
+{% if realtime %}def get_item_service(
+    session: SessionDep, tenant_id: TenantId, broker: BrokerDep
+) -> ItemService:
+    return ItemService(session, tenant_id, broker)
+{% else %}def get_item_service(session: SessionDep, tenant_id: TenantId) -> ItemService:
     return ItemService(session, tenant_id)
-
+{% endif %}
 
 ItemServiceDep = Annotated[ItemService, Depends(get_item_service)]
+{%- if stream %}
+
+
+def get_event_channel(tenant_id: TenantId) -> str:
+    """The caller's own tenant's event channel: the tenant comes from the principal only."""
+    return channel_for(tenant_id)
+
+
+ChannelDep = Annotated[str, Depends(get_event_channel)]
+{%- endif %}
 
 
 def get_user_service(session: SessionDep, tenant_id: TenantId) -> UserService:

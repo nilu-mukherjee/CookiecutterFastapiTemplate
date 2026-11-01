@@ -522,3 +522,103 @@ def test_celery_without_beat_leaves_no_beat_code(tmp_path):
     assert (proj / "app/worker/celery_app.py").exists()
     assert not (proj / "tests/worker/test_beat.py").exists()
     scan(proj, BEAT_NEEDLES)
+
+
+# --- realtime (broker, SSE, long polling) ---------------------------------------------
+
+REALTIME_FLAGS = ("use_sse", "use_long_polling", "use_websocket")
+NEW_PROTOCOL_FLAGS = (*REALTIME_FLAGS, "use_graphql", "use_grpc")
+NO_REALTIME = {flag: "n" for flag in REALTIME_FLAGS}
+BROKER_NEEDLES = ("eventbroker", "inmemorybroker", "channel_for", "text/event-stream",
+                  "sse_heartbeat_seconds", "long_poll_max_seconds", "app.realtime",
+                  "get_broker", "brokerunavailable", "invalid_event_id")
+SSE_PATHS = ["app/api/v1/endpoints/events.py", "tests/api/v1/streaming.py",
+             "tests/api/v1/test_sse.py"]
+POLL_PATHS = ["app/api/v1/endpoints/poll.py", "app/schemas/v1/event.py",
+              "tests/api/v1/test_poll.py"]
+BROKER_PATHS = ["app/realtime/__init__.py", "app/realtime/broker.py",
+                "tests/realtime/test_broker.py", "tests/realtime/test_publish.py"]
+REDIS_BROKER_PATHS = ["app/realtime/redis_broker.py"]
+
+
+def load_check_project():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("check_project", ROOT / "scripts/check_project.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_protocol_flags_are_cookiecutter_choices_defaulting_to_y():
+    import json
+
+    context = json.loads((ROOT / "cookiecutter.json").read_text())
+    keys = list(context)
+    for flag in NEW_PROTOCOL_FLAGS:
+        assert context[flag] == ["y", "n"], flag
+    # Placed right after use_redis, in this order.
+    start = keys.index("use_redis") + 1
+    assert keys[start:start + len(NEW_PROTOCOL_FLAGS)] == list(NEW_PROTOCOL_FLAGS)
+
+
+def test_presets_cover_the_protocol_flags():
+    presets = load_check_project().PRESETS
+    for flag in NEW_PROTOCOL_FLAGS:
+        assert presets["minimal"][flag] == "n", flag
+        assert presets["full"][flag] == "y", flag
+
+
+@pytest.mark.parametrize("extra", [{}, {"use_graphql": "y", "use_grpc": "y"}])
+def test_no_realtime_flag_leaves_no_broker_code(tmp_path, extra):
+    # GraphQL and gRPC alone do not force a broker.
+    r = gen(tmp_path, **NO_REALTIME, **extra)
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in ["app/realtime", "tests/realtime", *SSE_PATHS, *POLL_PATHS]:
+        assert not (proj / rel).exists(), rel
+    scan(proj, BROKER_NEEDLES + ("redisbroker", "get_stream_redis", "sse_heartbeat",
+                                 "long_poll"))
+
+
+@pytest.mark.parametrize("flag", REALTIME_FLAGS)
+def test_any_realtime_flag_generates_the_broker(tmp_path, flag):
+    r = gen(tmp_path, **{**NO_REALTIME, flag: "y"})
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in [*BROKER_PATHS, *REDIS_BROKER_PATHS]:
+        assert (proj / rel).exists(), rel
+    for rel in SSE_PATHS:
+        assert (proj / rel).exists() == (flag == "use_sse"), rel
+    for rel in POLL_PATHS:
+        assert (proj / rel).exists() == (flag == "use_long_polling"), rel
+
+
+def test_sse_off_leaves_no_sse_code(tmp_path):
+    r = gen(tmp_path, use_sse="n", use_long_polling="y", use_websocket="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in SSE_PATHS:
+        assert not (proj / rel).exists(), rel
+    assert (proj / "app/api/v1/endpoints/poll.py").exists()
+    scan(proj, ("sse_heartbeat_seconds", "text/event-stream", "last-event-id"))
+
+
+def test_long_polling_off_leaves_no_poll_code(tmp_path):
+    r = gen(tmp_path, use_sse="y", use_long_polling="n", use_websocket="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in POLL_PATHS:
+        assert not (proj / rel).exists(), rel
+    assert (proj / "app/api/v1/endpoints/events.py").exists()
+    scan(proj, ("long_poll_max_seconds", "/poll", "eventbatch"))
+
+
+def test_redis_off_leaves_no_redis_broker(tmp_path):
+    r = gen(tmp_path, use_redis="n", use_celery="n", use_celery_beat="n", use_flower="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    assert (proj / "app/realtime/broker.py").exists()
+    for rel in REDIS_BROKER_PATHS:
+        assert not (proj / rel).exists(), rel
+    scan(proj, ("redisbroker", "redis_broker", "get_stream_redis", "xread", "xadd"))

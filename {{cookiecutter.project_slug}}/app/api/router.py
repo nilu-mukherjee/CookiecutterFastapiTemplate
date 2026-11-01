@@ -1,3 +1,4 @@
+{%- set realtime = cookiecutter.use_sse == "y" or cookiecutter.use_long_polling == "y" or cookiecutter.use_websocket == "y" -%}
 from fastapi import APIRouter, FastAPI
 
 from app.api import health
@@ -12,6 +13,10 @@ def _version_app(root: FastAPI, version: str, router: APIRouter) -> FastAPI:
     register_exception_handlers(sub)
     # Mounted sub-apps do not inherit overrides; share the root's dict.
     sub.dependency_overrides = root.dependency_overrides
+{%- if realtime %}
+    # Nor its state: share it, so request.app.state.broker is the one the lifespan set.
+    sub.state = root.state
+{%- endif %}
     return sub
 
 
