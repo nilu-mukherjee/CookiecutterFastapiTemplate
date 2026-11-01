@@ -1,8 +1,8 @@
 {%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
 import base64
 
-from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
 
 from app.core.auth.base import Principal
 from app.core.config import get_settings
@@ -30,7 +30,9 @@ class BasicAuthenticator:
     request looks like plain http and Basic is rejected.
     """
 
-    async def authenticate(self, request: Request, session: AsyncSession) -> Principal | None:
+    async def authenticate(
+        self, request: HTTPConnection, session: AsyncSession
+    ) -> Principal | None:
         header = request.headers.get("authorization")
         if not header:
             return None

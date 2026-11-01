@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
 
-from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
 
 # The enabled methods only.
 AuthMethod = Literal[{% for m in methods %}"{{ m }}"{% if not loop.last %}, {% endif %}{% endfor %}]
@@ -41,5 +41,7 @@ class Authenticator(Protocol):
     Raising (rather than returning None) stops the next method from being tried.
     """
 
-    async def authenticate(self, request: Request, session: AsyncSession) -> Principal | None:
+    async def authenticate(
+        self, request: HTTPConnection, session: AsyncSession
+    ) -> Principal | None:
         ...

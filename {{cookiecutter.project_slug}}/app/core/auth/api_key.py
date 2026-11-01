@@ -1,6 +1,6 @@
 {%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
-from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
 
 from app.core.auth.base import Principal
 from app.core.exceptions import AppError
@@ -17,7 +17,9 @@ class ApiKeyAuthenticator:
     credential, not an absent one.
     """
 
-    async def authenticate(self, request: Request, session: AsyncSession) -> Principal | None:
+    async def authenticate(
+        self, request: HTTPConnection, session: AsyncSession
+    ) -> Principal | None:
         raw = request.headers.get(API_KEY_HEADER)
         if raw is None:
             return None

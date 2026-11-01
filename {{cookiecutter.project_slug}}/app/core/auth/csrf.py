@@ -16,7 +16,8 @@ import hmac
 import secrets
 from uuid import UUID
 
-from fastapi import Request, Response
+from fastapi import Response
+from starlette.requests import HTTPConnection
 
 from app.core.auth.cookies import CSRF_COOKIE, set_cookie
 from app.core.config import get_settings
@@ -52,9 +53,11 @@ def _signed_for(token: str, user_id: UUID) -> bool:
     return hmac.compare_digest(mac.encode(), _mac(user_id, nonce).encode())
 
 
-def require_csrf(request: Request, user_id: UUID) -> None:
+def require_csrf(request: HTTPConnection, user_id: UUID) -> None:
     """Raise 403 ``csrf_failed`` unless an unsafe request carries a valid token."""
-    if request.method in SAFE_METHODS:
+    # A WebSocket handshake has no method; its cookie credentials are guarded by the
+    # Origin check instead (see app.api.v1.endpoints.ws).
+    if request.scope.get("method", "GET") in SAFE_METHODS:
         return
     header = request.headers.get(CSRF_HEADER, "")
     cookie = request.cookies.get(CSRF_COOKIE, "")

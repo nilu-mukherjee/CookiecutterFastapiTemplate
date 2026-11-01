@@ -541,6 +541,8 @@ BROKER_PATHS = ["app/realtime/__init__.py", "app/realtime/broker.py",
                 "app/realtime/state.py", "tests/realtime/test_broker.py",
                 "tests/realtime/test_publish.py", "tests/realtime/test_state.py"]
 REDIS_BROKER_PATHS = ["app/realtime/redis_broker.py"]
+WS_PATHS = ["app/api/v1/endpoints/ws.py", "tests/api/v1/ws_client.py",
+            "tests/api/v1/test_ws.py"]
 
 
 def load_check_project():
@@ -594,6 +596,8 @@ def test_any_realtime_flag_generates_the_broker(tmp_path, flag):
         assert (proj / rel).exists() == (flag == "use_sse"), rel
     for rel in POLL_PATHS:
         assert (proj / rel).exists() == (flag == "use_long_polling"), rel
+    for rel in WS_PATHS:
+        assert (proj / rel).exists() == (flag == "use_websocket"), rel
 
 
 def test_sse_off_leaves_no_sse_code(tmp_path):
@@ -614,6 +618,15 @@ def test_long_polling_off_leaves_no_poll_code(tmp_path):
         assert not (proj / rel).exists(), rel
     assert (proj / "app/api/v1/endpoints/events.py").exists()
     scan(proj, ("long_poll_max_seconds", "/poll", "eventbatch"))
+
+
+def test_websocket_off_leaves_no_websocket_code(tmp_path):
+    r = gen(tmp_path, use_sse="y", use_long_polling="y", use_websocket="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in WS_PATHS:
+        assert not (proj / rel).exists(), rel
+    scan(proj, ("/ws/items", "answer_pings", "origin_allowed", "authenticate_connection(websocket"))
 
 
 def test_redis_off_leaves_no_redis_broker(tmp_path):

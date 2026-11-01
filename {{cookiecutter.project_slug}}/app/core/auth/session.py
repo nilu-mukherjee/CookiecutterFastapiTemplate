@@ -1,6 +1,6 @@
 {%- set tenancy = cookiecutter.use_multitenancy == "y" -%}
-from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
 
 from app.core.auth.base import Principal
 from app.core.auth.cookies import SESSION_COOKIE
@@ -20,7 +20,9 @@ def _invalid_session() -> AppError:
 class SessionAuthenticator:
     """Session id in the HttpOnly ``session_id`` cookie, plus CSRF on unsafe methods."""
 
-    async def authenticate(self, request: Request, session: AsyncSession) -> Principal | None:
+    async def authenticate(
+        self, request: HTTPConnection, session: AsyncSession
+    ) -> Principal | None:
         raw = request.cookies.get(SESSION_COOKIE)
         if not raw:
             return None

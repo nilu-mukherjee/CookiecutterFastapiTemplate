@@ -1,5 +1,5 @@
-from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
 
 from app.core.auth.access_token import principal_from_access_token
 from app.core.auth.base import Principal
@@ -10,7 +10,9 @@ from app.core.auth.csrf import require_csrf
 class JWTCookieAuthenticator:
     """Access token in the HttpOnly ``access_token`` cookie, plus CSRF on unsafe methods."""
 
-    async def authenticate(self, request: Request, session: AsyncSession) -> Principal | None:
+    async def authenticate(
+        self, request: HTTPConnection, session: AsyncSession
+    ) -> Principal | None:
         token = request.cookies.get(ACCESS_COOKIE)
         if not token:
             return None

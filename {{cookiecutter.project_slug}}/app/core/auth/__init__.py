@@ -4,6 +4,9 @@
 {%- set api_key = cookiecutter.use_auth_api_key == "y" -%}
 {%- set basic = cookiecutter.use_auth_basic == "y" -%}
 """Assembles the enabled authentication methods, in precedence order."""
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
+
 {% if api_key %}from app.core.auth.api_key import ApiKeyAuthenticator
 {% endif %}from app.core.auth.base import Authenticator, Principal
 {%- if basic %}
@@ -39,4 +42,23 @@ AUTHENTICATORS: list[Authenticator] = [
 {%- endif %}
 ]
 
-__all__ = ["AUTHENTICATORS", "Authenticator", "Principal"]
+
+
+async def authenticate_connection(
+    connection: HTTPConnection, session: AsyncSession
+) -> Principal | None:
+    """Authenticate an HTTP request or a WebSocket handshake with the enabled methods.
+
+    The first authenticator that returns a Principal wins; None means no credential was
+    sent. An authenticator that finds its credential but rejects it raises a 401 itself,
+    which is deliberately not caught: an invalid credential never falls through to
+    another method.
+    """
+    for authenticator in AUTHENTICATORS:
+        principal = await authenticator.authenticate(connection, session)
+        if principal is not None:
+            return principal
+    return None
+
+
+__all__ = ["AUTHENTICATORS", "Authenticator", "Principal", "authenticate_connection"]

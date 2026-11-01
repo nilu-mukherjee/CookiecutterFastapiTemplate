@@ -47,6 +47,11 @@ PRUNE: dict[Key, list[str]] = {
         "app/schemas/v1/event.py",
         "tests/api/v1/test_poll.py",
     ],
+    "use_websocket": [
+        "app/api/v1/endpoints/ws.py",
+        "tests/api/v1/ws_client.py",
+        "tests/api/v1/test_ws.py",
+    ],
     "use_celery": ["app/worker", "tests/worker"],
     ("use_celery", "use_celery_beat"): ["tests/worker/test_beat.py"],
     "use_auth": [

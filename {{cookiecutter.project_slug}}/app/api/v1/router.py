@@ -15,9 +15,18 @@
 {%- if rbac %}{% set _ = modules.append("roles") %}{% endif -%}
 {%- if tenancy %}{% set _ = modules.append("tenants") %}{% endif -%}
 {%- if auth %}{% set _ = modules.append("users") %}{% endif -%}
+{%- if cookiecutter.use_websocket == "y" %}{% set _ = modules.append("ws") %}{% endif -%}
 from fastapi import APIRouter
 
+{% if ("from app.api.v1.endpoints import " ~ (modules | join(", "))) | length > 100 -%}
+from app.api.v1.endpoints import (
+{%- for name in modules %}
+    {{ name }},
+{%- endfor %}
+)
+{%- else -%}
 from app.api.v1.endpoints import {{ modules | join(", ") }}
+{%- endif %}
 
 router = APIRouter()
 {%- if use_jwt %}
@@ -48,4 +57,7 @@ router.include_router(api_keys.router)
 {%- endif %}
 {%- if tenancy %}
 router.include_router(tenants.router)
+{%- endif %}
+{%- if cookiecutter.use_websocket == "y" %}
+router.include_router(ws.router)
 {%- endif %}

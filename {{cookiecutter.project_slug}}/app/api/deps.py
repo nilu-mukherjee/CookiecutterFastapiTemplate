@@ -10,6 +10,8 @@
 {%- set use_jwt = bearer or jwt_cookie -%}
 {%- set realtime = cookiecutter.use_sse == "y" or cookiecutter.use_long_polling == "y" or cookiecutter.use_websocket == "y" -%}
 {%- set stream = cookiecutter.use_sse == "y" or cookiecutter.use_long_polling == "y" -%}
+{#- Everything that holds a connection open takes a slot from RealtimeState. -#}
+{%- set connections = stream or cookiecutter.use_websocket == "y" -%}
 {%- set schemes = [] -%}
 {%- if bearer %}{% set _ = schemes.extend(["HTTPAuthorizationCredentials", "HTTPBearer"]) %}{% endif -%}
 {%- if jwt_cookie or session %}{% set _ = schemes.append("APIKeyCookie") %}{% endif -%}
@@ -26,14 +28,14 @@
 {%- endfor %}
 )
 {% else %}from fastapi.security import {{ imported }}
-{% endif %}{% elif auth or realtime %}from fastapi import Depends, Request
+{% endif %}{% elif auth %}from fastapi import Depends, Request
 {% else %}from fastapi import Depends
 {% endif %}{% if cookiecutter.use_redis == "y" %}from redis.asyncio import Redis
 {% endif %}from sqlalchemy.ext.asyncio import AsyncSession
-{% if basic %}from starlette.requests import HTTPConnection
+{% if basic or realtime %}from starlette.requests import HTTPConnection
 {% endif %}
 {% if cookiecutter.use_redis == "y" %}from app.cache.redis import get_redis
-{% endif %}{% if auth %}from app.core.auth import AUTHENTICATORS, Principal
+{% endif %}{% if auth %}from app.core.auth import Principal, authenticate_connection
 {% endif %}{% if api_key %}from app.core.auth.api_key import API_KEY_HEADER
 {% endif %}{% if jwt_cookie or session %}from app.core.auth.cookies import {% if jwt_cookie %}ACCESS_COOKIE{% endif %}{% if jwt_cookie and session %}, {% endif %}{% if session %}SESSION_COOKIE{% endif %}
 {% endif %}{% if social %}from app.core.auth.oauth_providers import OAuthProviders, configured_providers
@@ -41,7 +43,7 @@ from app.core.config import get_settings
 {% endif %}{% if auth %}from app.core.exceptions import AppError
 {% endif %}from app.db.session import get_session
 {% if realtime %}from app.realtime.broker import EventBroker{% if stream %}, channel_for{% endif %}
-{% if stream %}from app.realtime.state import RealtimeState
+{% if connections %}from app.realtime.state import RealtimeState
 {% endif %}{% endif %}{% if api_key %}from app.services.api_key import ApiKeyService
 {% endif %}{% if use_jwt %}from app.services.auth import AuthService
 {% endif %}from app.services.item import ItemService
@@ -55,19 +57,19 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 {%- if realtime %}
 
 
-def get_broker(request: Request) -> EventBroker:
+def get_broker(connection: HTTPConnection) -> EventBroker:
     """The process's event broker, created at startup (lifespan)."""
-    broker: EventBroker = request.app.state.broker
+    broker: EventBroker = connection.app.state.broker
     return broker
 
 
 BrokerDep = Annotated[EventBroker, Depends(get_broker)]
-{%- if stream %}
+{%- if connections %}
 
 
-def get_realtime_state(request: Request) -> RealtimeState:
+def get_realtime_state(connection: HTTPConnection) -> RealtimeState:
     """The process's connection limiter and shutdown signal, created at startup."""
-    state: RealtimeState = request.app.state.realtime
+    state: RealtimeState = connection.app.state.realtime
     return state
 
 
@@ -222,16 +224,10 @@ async def get_current_principal(
     _basic: Annotated[HTTPBasicCredentials | None, Security(basic_scheme)],
 {%- endif %}
 ) -> Principal:
-    """Authenticate the request with the enabled methods, in order.
-
-    The first authenticator that returns a Principal wins. An authenticator that
-    finds its credential but rejects it raises a 401 itself, which is deliberately
-    not caught: an invalid credential never falls through to another method.
-    """
-    for authenticator in AUTHENTICATORS:
-        principal = await authenticator.authenticate(request, session)
-        if principal is not None:
-            return principal
+    """Authenticate the request with the enabled methods, in order (first match wins)."""
+    principal = await authenticate_connection(request, session)
+    if principal is not None:
+        return principal
     raise AppError(
         401,
         "not_authenticated",
