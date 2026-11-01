@@ -6,12 +6,17 @@
     social login (its short-lived OAuth state cookie). -#}
 {%- set cookie_auth = auth and (cookiecutter.use_auth_jwt_cookie == "y" or session_auth or social) -%}
 {%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
+{%- set sse = cookiecutter.use_sse == "y" -%}
+{%- set poll = cookiecutter.use_long_polling == "y" -%}
+{%- set pydantic_names = [] -%}
+{%- if sse or poll %}{% set _ = pydantic_names.append("PositiveFloat") %}{% endif -%}
+{%- if social %}{% set _ = pydantic_names.append("SecretStr") %}{% endif -%}
+{%- if cookie_auth %}{% set _ = pydantic_names.append("field_validator") %}{% endif -%}
+{%- if auth %}{% set _ = pydantic_names.append("model_validator") %}{% endif -%}
 from functools import lru_cache
 from typing import Literal
 
-{% if social %}from pydantic import SecretStr, field_validator, model_validator
-{% elif cookie_auth %}from pydantic import field_validator, model_validator
-{% elif auth %}from pydantic import model_validator
+{% if pydantic_names %}from pydantic import {{ pydantic_names | join(", ") }}
 {% endif %}from pydantic_settings import BaseSettings, SettingsConfigDict
 {%- if auth %}
 
@@ -39,6 +44,14 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 120
 {%- if cookiecutter.use_redis == "y" %}
     redis_url: str = "redis://localhost:6379/0"
+{%- endif %}
+{%- if sse %}
+    # Idle SSE streams send a comment this often so proxies keep the connection open.
+    sse_heartbeat_seconds: PositiveFloat = 15.0
+{%- endif %}
+{%- if poll %}
+    # Upper bound of a long poll's ``timeout`` (a larger value is clamped to it).
+    long_poll_max_seconds: PositiveFloat = 30.0
 {%- endif %}
 {%- if cookiecutter.use_celery == "y" %}
     celery_broker_url: str = "amqp://guest:guest@localhost:5672//"
