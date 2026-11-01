@@ -1,13 +1,21 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response
+{% if cookiecutter.use_auth == "y" %}from fastapi import APIRouter, Depends, Query, Response
+
+from app.api.deps import ItemServiceDep, get_current_principal
+{% else %}from fastapi import APIRouter, Query, Response
 
 from app.api.deps import ItemServiceDep
-from app.schemas.v1.item import ItemCreate, ItemList, ItemRead, ItemUpdate
+{% endif %}from app.schemas.v1.item import ItemCreate, ItemList, ItemRead, ItemUpdate
 
-router = APIRouter(prefix="/items", tags=["items"])
-
+{% if cookiecutter.use_auth == "y" %}router = APIRouter(
+    prefix="/items",
+    tags=["items"],
+    dependencies=[Depends(get_current_principal)],
+)
+{% else %}router = APIRouter(prefix="/items", tags=["items"])
+{% endif %}
 
 @router.post("", response_model=ItemRead, status_code=201)
 async def create_item(body: ItemCreate, service: ItemServiceDep) -> ItemRead:

@@ -5,9 +5,8 @@ from alembic import context
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-import app.models.item  # noqa: F401  (register tables)
 from app.core.config import get_settings
-from app.models.base import Base
+from app.models import Base  # imports every enabled model
 
 config = context.config
 if config.config_file_name is not None:

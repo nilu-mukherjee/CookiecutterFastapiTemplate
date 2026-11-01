@@ -1,21 +1,34 @@
-{% if cookiecutter.use_redis == "y" %}from collections.abc import AsyncIterator
+{%- set auth = cookiecutter.use_auth == "y" -%}
+{%- set redis = cookiecutter.use_redis == "y" -%}
+{%- set lifespan = auth or redis -%}
+{% if lifespan %}from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 {% endif %}from fastapi import FastAPI
 
 from app.api.router import mount_routes
-{% if cookiecutter.use_redis == "y" %}from app.cache.redis import close_redis
+{% if redis %}from app.cache.redis import close_redis
 {% endif %}from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import register_middleware
-{%- if cookiecutter.use_redis == "y" %}
+{%- if auth %}
+from app.db.session import get_sessionmaker
+from app.services.user import UserService
+{%- endif %}
+{%- if lifespan %}
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+{%- if auth %}
+    async with get_sessionmaker()() as session:
+        await UserService(session).bootstrap_superuser()
+{%- endif %}
     yield
+{%- if redis %}
     await close_redis()
+{%- endif %}
 {%- endif %}
 
 
@@ -25,7 +38,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="{{ cookiecutter.project_name }}",
         debug=settings.debug,
-{%- if cookiecutter.use_redis == "y" %}
+{%- if lifespan %}
         lifespan=lifespan,
 {%- endif %}
     )

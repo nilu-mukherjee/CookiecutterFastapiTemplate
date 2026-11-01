@@ -72,3 +72,35 @@ def test_post_gen_survives_triple_single_quotes_in_author(tmp_path):
     assert r.returncode == 0, r.stderr
     assert (tmp_path / "my_project" / "README.md").exists()
 
+
+
+AUTH_PATHS = [
+    "app/core/auth", "app/core/security.py", "app/models/user.py",
+    "app/models/refresh_token.py", "app/repositories/user.py",
+    "app/repositories/refresh_token.py", "app/services/auth.py", "app/services/user.py",
+    "app/schemas/v1/auth.py", "app/schemas/v1/user.py", "app/api/v1/endpoints/auth.py",
+    "app/api/v1/endpoints/users.py", "alembic/versions/0002_auth.py", "tests/auth",
+]
+
+
+def test_auth_off_leaves_no_auth_code(tmp_path):
+    r = gen(tmp_path, use_auth="n", use_rbac="n", use_multitenancy="n", use_social_login="n")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in AUTH_PATHS:
+        assert not (proj / rel).exists(), rel
+    needles = ("argon2", "pyjwt", "import jwt", "secret_key", "SECRET_KEY", "Principal",
+               "email-validator", "refresh_token", "get_current_principal", "superuser")
+    for path in proj.rglob("*"):
+        if path.is_file() and ".git" not in path.parts:
+            text = path.read_text(errors="ignore")
+            for needle in needles:
+                assert needle not in text, f"{needle!r} left in {path.relative_to(proj)}"
+
+
+def test_auth_jwt_bearer_on_generates_auth_code(tmp_path):
+    r = gen(tmp_path, use_auth="y", use_auth_jwt_bearer="y")
+    assert r.returncode == 0, r.stderr
+    proj = tmp_path / "my_project"
+    for rel in AUTH_PATHS:
+        assert (proj / rel).exists(), rel

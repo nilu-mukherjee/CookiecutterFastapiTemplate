@@ -23,6 +23,28 @@ PRUNE: dict[str | tuple[str, ...], list[str]] = {
         "app/middleware/rate_limit_redis.py",
         "tests/middleware/test_rate_limit_redis.py",
     ],
+    "use_auth": [
+        "app/core/auth",
+        "app/core/security.py",
+        "app/models/user.py",
+        "app/repositories/user.py",
+        "app/services/user.py",
+        "app/schemas/v1/user.py",
+        "app/api/v1/endpoints/users.py",
+        "alembic/versions/0002_auth.py",
+        "tests/auth",
+    ],
+    ("use_auth", "use_auth_jwt_bearer"): [
+        "app/core/auth/jwt_bearer.py",
+        "app/models/refresh_token.py",
+        "app/repositories/refresh_token.py",
+        "app/services/auth.py",
+        "app/schemas/v1/auth.py",
+        "app/api/v1/endpoints/auth.py",
+        "tests/auth/test_jwt_bearer.py",
+        # Uses Bearer tokens for its principals until other methods exist.
+        "tests/auth/test_users.py",
+    ],
 }
 
 

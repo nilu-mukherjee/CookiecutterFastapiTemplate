@@ -11,11 +11,18 @@ logger = logging.getLogger(__name__)
 
 
 class AppError(Exception):
-    def __init__(self, status_code: int, code: str, detail: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        detail: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.code = code
         self.detail = detail
+        self.headers = headers
 
 
 def _body(request: Request, code: str, detail: str) -> dict[str, str | None]:
@@ -26,7 +33,11 @@ def _body(request: Request, code: str, detail: str) -> dict[str, str | None]:
 
 async def _app_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AppError)
-    return JSONResponse(_body(request, exc.code, exc.detail), status_code=exc.status_code)
+    return JSONResponse(
+        _body(request, exc.code, exc.detail),
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
 
 async def _http_error(request: Request, exc: Exception) -> JSONResponse:
