@@ -89,6 +89,56 @@ async def test_bootstrap_superuser_creates_once(
     assert len(users) == 1
 
 
+async def test_bootstrap_concurrent_loser_is_noop(
+    maker: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_settings: None,
+) -> None:
+    """Two workers starting together: the loser must not crash startup."""
+    monkeypatch.setenv("FIRST_SUPERUSER_EMAIL", "admin@example.com")
+    monkeypatch.setenv("FIRST_SUPERUSER_PASSWORD", "bootstrap-password")
+    get_settings.cache_clear()
+    async with maker() as winner_session, maker() as loser_session:
+        loser = UserService(loser_session)
+
+        async def not_found_yet(email: str) -> None:
+            return None  # the loser checked before the winner committed
+
+        monkeypatch.setattr(loser.repo, "get_by_email", not_found_yet)
+        assert await UserService(winner_session).bootstrap_superuser() is not None
+        # The loser now hits the real unique-index IntegrityError path.
+        assert await loser.bootstrap_superuser() is None
+    async with maker() as session:
+        users = (await session.scalars(select(User))).all()
+    assert [u.email for u in users] == ["admin@example.com"]
+
+
+async def test_bootstrap_other_errors_still_raise(
+    maker: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_settings: None,
+) -> None:
+    monkeypatch.setenv("FIRST_SUPERUSER_EMAIL", "admin@example.com")
+    monkeypatch.setenv("FIRST_SUPERUSER_PASSWORD", "too-short")
+    get_settings.cache_clear()
+    async with maker() as session:
+        with pytest.raises(AppError) as exc:
+            await UserService(session).bootstrap_superuser()
+    assert exc.value.code == "invalid_password"
+
+    monkeypatch.setenv("FIRST_SUPERUSER_PASSWORD", "bootstrap-password")
+    get_settings.cache_clear()
+    async with maker() as session:
+        service = UserService(session)
+
+        async def boom(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(service, "create", boom)
+        with pytest.raises(RuntimeError):
+            await service.bootstrap_superuser()
+
+
 async def test_bootstrap_superuser_noop_when_not_configured(
     maker: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

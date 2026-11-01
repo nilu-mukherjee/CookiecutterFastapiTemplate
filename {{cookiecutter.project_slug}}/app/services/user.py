@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Sequence
 from uuid import UUID
 
@@ -15,6 +16,8 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.repositories.user import UserRepository
+
+logger = logging.getLogger("app.users")
 
 
 class UserService:
@@ -84,4 +87,12 @@ class UserService:
             return None
         if await self.repo.get_by_email(email) is not None:
             return None
-        return await self.create(email, password, is_superuser=True)
+        try:
+            return await self.create(email, password, is_superuser=True)
+        except AppError as exc:
+            if exc.code != "email_taken":
+                raise
+            # Another worker created it between our check and insert (concurrent startup).
+            await self.session.rollback()
+            logger.info("first superuser already created by another process")
+            return None
