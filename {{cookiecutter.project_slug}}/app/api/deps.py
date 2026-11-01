@@ -41,7 +41,8 @@ from app.core.config import get_settings
 {% endif %}{% if auth %}from app.core.exceptions import AppError
 {% endif %}from app.db.session import get_session
 {% if realtime %}from app.realtime.broker import EventBroker{% if stream %}, channel_for{% endif %}
-{% endif %}{% if api_key %}from app.services.api_key import ApiKeyService
+{% if stream %}from app.realtime.state import RealtimeState
+{% endif %}{% endif %}{% if api_key %}from app.services.api_key import ApiKeyService
 {% endif %}{% if use_jwt %}from app.services.auth import AuthService
 {% endif %}from app.services.item import ItemService
 {% if rbac %}from app.services.rbac import RbacService
@@ -61,6 +62,17 @@ def get_broker(request: Request) -> EventBroker:
 
 
 BrokerDep = Annotated[EventBroker, Depends(get_broker)]
+{%- if stream %}
+
+
+def get_realtime_state(request: Request) -> RealtimeState:
+    """The process's connection limiter and shutdown signal, created at startup."""
+    state: RealtimeState = request.app.state.realtime
+    return state
+
+
+RealtimeDep = Annotated[RealtimeState, Depends(get_realtime_state)]
+{%- endif %}
 {%- endif %}
 {%- if not tenancy %}
 

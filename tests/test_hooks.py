@@ -531,13 +531,15 @@ NEW_PROTOCOL_FLAGS = (*REALTIME_FLAGS, "use_graphql", "use_grpc")
 NO_REALTIME = {flag: "n" for flag in REALTIME_FLAGS}
 BROKER_NEEDLES = ("eventbroker", "inmemorybroker", "channel_for", "text/event-stream",
                   "sse_heartbeat_seconds", "long_poll_max_seconds", "app.realtime",
-                  "get_broker", "brokerunavailable", "invalid_event_id")
+                  "get_broker", "brokerunavailable", "invalid_event_id", "realtimestate",
+                  "realtime_max_connections", "too_many_connections")
 SSE_PATHS = ["app/api/v1/endpoints/events.py", "tests/api/v1/streaming.py",
              "tests/api/v1/test_sse.py"]
 POLL_PATHS = ["app/api/v1/endpoints/poll.py", "app/schemas/v1/event.py",
               "tests/api/v1/test_poll.py"]
 BROKER_PATHS = ["app/realtime/__init__.py", "app/realtime/broker.py",
-                "tests/realtime/test_broker.py", "tests/realtime/test_publish.py"]
+                "app/realtime/state.py", "tests/realtime/test_broker.py",
+                "tests/realtime/test_publish.py", "tests/realtime/test_state.py"]
 REDIS_BROKER_PATHS = ["app/realtime/redis_broker.py"]
 
 

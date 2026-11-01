@@ -1,10 +1,13 @@
 {%- set redis = cookiecutter.use_redis == "y" -%}
 """Realtime item events (``broker.py`` defines the contract)."""
+__all__ = ["RealtimeState", "create_broker"]
+
 {% if redis %}from app.cache.redis import get_redis, get_stream_redis
 from app.realtime.broker import EventBroker
 from app.realtime.redis_broker import RedisBroker
 {% else %}from app.realtime.broker import EventBroker, InMemoryBroker
-{% endif %}
+{% endif %}from app.realtime.state import RealtimeState
+
 
 def create_broker() -> EventBroker:
     """The process's broker, created once at startup (lifespan) as ``app.state.broker``."""

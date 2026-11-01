@@ -40,7 +40,7 @@ from app.core.config import get_settings
 from app.main import create_app
 {% if auth %}from app.models import Base, {% if tenancy %}Tenant, {% endif %}User
 {% else %}from app.models import Base
-{% endif %}{% if realtime %}from app.realtime import create_broker
+{% endif %}{% if realtime %}from app.realtime import RealtimeState, create_broker
 {% endif %}{% if auth %}{% if api_key %}from app.services.api_key import ApiKeyService
 {% endif %}{% if rbac %}from app.services.rbac import RbacService
 {% endif %}{% if tenancy %}from app.services.tenant import TenantService
@@ -84,6 +84,7 @@ def application(maker: async_sessionmaker[AsyncSession]) -> FastAPI:
 {%- if realtime %}
     # The lifespan creates the broker in a running app; the tests' app is not started.
     app.state.broker = create_broker()
+    app.state.realtime = RealtimeState(1000)
 {%- endif %}
     return app
 {%- endif %}

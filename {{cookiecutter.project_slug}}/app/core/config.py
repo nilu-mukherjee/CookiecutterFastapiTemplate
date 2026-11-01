@@ -8,8 +8,10 @@
 {%- set use_jwt = auth and (cookiecutter.use_auth_jwt_bearer == "y" or cookiecutter.use_auth_jwt_cookie == "y") -%}
 {%- set sse = cookiecutter.use_sse == "y" -%}
 {%- set poll = cookiecutter.use_long_polling == "y" -%}
+{%- set realtime = sse or poll or cookiecutter.use_websocket == "y" -%}
 {%- set pydantic_names = [] -%}
 {%- if sse or poll %}{% set _ = pydantic_names.append("PositiveFloat") %}{% endif -%}
+{%- if realtime %}{% set _ = pydantic_names.append("PositiveInt") %}{% endif -%}
 {%- if social %}{% set _ = pydantic_names.append("SecretStr") %}{% endif -%}
 {%- if cookie_auth %}{% set _ = pydantic_names.append("field_validator") %}{% endif -%}
 {%- if auth %}{% set _ = pydantic_names.append("model_validator") %}{% endif -%}
@@ -44,6 +46,10 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 120
 {%- if cookiecutter.use_redis == "y" %}
     redis_url: str = "redis://localhost:6379/0"
+{%- endif %}
+{%- if realtime %}
+    # Most long-lived connections (streams, long polls) one process serves at once.
+    realtime_max_connections: PositiveInt = 1000
 {%- endif %}
 {%- if sse %}
     # Idle SSE streams send a comment this often so proxies keep the connection open.

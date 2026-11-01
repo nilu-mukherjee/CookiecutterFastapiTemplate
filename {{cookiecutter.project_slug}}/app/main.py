@@ -19,7 +19,7 @@ from app.core.middleware import register_middleware
 from app.db.session import get_sessionmaker
 {%- endif %}
 {%- if realtime %}
-from app.realtime import create_broker
+from app.realtime import RealtimeState, create_broker
 {%- endif %}
 {%- if auth %}
 {%- if rbac %}
@@ -54,8 +54,13 @@ async def lifespan({% if realtime %}application{% else %}_{% endif %}: FastAPI) 
 {%- if realtime %}
     # One broker per process, chosen here: Redis Streams with Redis, else in-memory.
     application.state.broker = create_broker()
+    application.state.realtime = RealtimeState(get_settings().realtime_max_connections)
 {%- endif %}
     yield
+{%- if realtime %}
+    # Tell open streams and polls to end, so shutdown does not wait for their clients.
+    application.state.realtime.closing.set()
+{%- endif %}
 {%- if redis %}
     await close_redis()
 {%- endif %}

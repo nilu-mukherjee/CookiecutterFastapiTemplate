@@ -6,18 +6,26 @@
 import asyncio
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import {% if auth %}AsyncIterator, {% endif %}Iterator
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
+{%- if auth %}
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+{%- endif %}
 
+import app.api.v1.endpoints.poll as poll_module
 from app.core.config import get_settings
+{%- if auth %}
+from app.db.session import get_session
+{%- endif %}
 {%- if tenancy %}
 from app.models import Tenant
 {%- endif %}
 from app.realtime.broker import BrokerUnavailable, EventBroker, channel_for
+from app.realtime.state import RealtimeState
 {%- if rbac or tenancy %}
 from tests.conftest import {% if rbac %}LoginClient, {% endif %}MakeUser
 {%- endif %}
@@ -54,6 +62,26 @@ def channel(tenant: Tenant) -> str:
 @pytest.fixture
 def channel() -> str:
     return channel_for(None)
+{%- endif %}
+
+
+{%- if auth %}
+
+
+@pytest.fixture
+def sessions(
+    application: FastAPI, maker: async_sessionmaker[AsyncSession]
+) -> list[AsyncSession]:
+    """Every database session the app opens for a request, to see which are still in use."""
+    opened: list[AsyncSession] = []
+
+    async def tracked() -> AsyncIterator[AsyncSession]:
+        async with maker() as session:
+            opened.append(session)
+            yield session
+
+    application.dependency_overrides[get_session] = tracked
+    return opened
 {%- endif %}
 
 
@@ -298,4 +326,63 @@ async def test_system_tenant_superuser_does_not_see_tenant_events(
 
     assert r.status_code == 204
     assert (await root.get(POLL)).json() == {"events": [], "last_id": None}
+{%- endif %}
+
+
+async def test_closing_ends_a_waiting_poll(
+    application: FastAPI,
+    client: AsyncClient,
+    broker: EventBroker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(poll_module, "WAIT_SLICE_SECONDS", 0.05)
+    waiting = asyncio.create_task(
+        client.get(POLL, params={"after": broker.start_id, "timeout": 30})
+    )
+    await asyncio.sleep(0.2)
+    assert not waiting.done()
+
+    application.state.realtime.closing.set()
+    r = await asyncio.wait_for(waiting, WAIT)
+
+    assert r.status_code == 204
+
+
+async def test_too_many_polls_is_503_with_retry_after_and_slots_are_released(
+    application: FastAPI, client: AsyncClient, broker: EventBroker
+) -> None:
+    application.state.realtime = RealtimeState(1)
+    waiting = asyncio.create_task(
+        client.get(POLL, params={"after": broker.start_id, "timeout": 10})
+    )
+    await asyncio.sleep(0.1)
+
+    r = await client.get(POLL, params={"after": broker.start_id, "timeout": 10})
+
+    assert r.status_code == 503
+    assert r.headers["retry-after"] == "5"
+    assert r.json()["code"] == "too_many_connections"
+    await create(client)
+    assert (await asyncio.wait_for(waiting, WAIT)).status_code == 200
+    assert application.state.realtime.active == 0
+    # A refused-before-waiting request (bad id) gives its slot back too.
+    assert (await client.get(POLL, params={"after": "x"})).status_code == 400
+    assert application.state.realtime.active == 0
+{%- if auth %}
+
+
+async def test_a_waiting_poll_holds_no_database_session(
+    client: AsyncClient, broker: EventBroker, sessions: list[AsyncSession]
+) -> None:
+    waiting = asyncio.create_task(
+        client.get(POLL, params={"after": broker.start_id, "timeout": 10})
+    )
+    await asyncio.sleep(0.2)
+
+    assert not waiting.done()
+    assert sessions, "authentication should have used a session"
+    assert [s for s in sessions if s.in_transaction()] == []
+
+    await create(client)  # releases the poll
+    await asyncio.wait_for(waiting, WAIT)
 {%- endif %}

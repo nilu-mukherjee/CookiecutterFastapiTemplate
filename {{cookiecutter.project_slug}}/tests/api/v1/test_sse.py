@@ -3,20 +3,28 @@
 {%- set tenancy = auth and cookiecutter.use_multitenancy == "y" -%}
 {%- set redis = cookiecutter.use_redis == "y" -%}
 """GET /api/v1/items/events: the item event stream (Server-Sent Events)."""
+import asyncio
 import json
 import logging
-from collections.abc import Iterator
+from collections.abc import {% if auth %}AsyncIterator, {% endif %}Iterator
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
+{%- if auth %}
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+{%- endif %}
 
 from app.core.config import get_settings
+{%- if auth %}
+from app.db.session import get_session
+{%- endif %}
 {%- if tenancy %}
 from app.models import Tenant
 {%- endif %}
 from app.realtime.broker import BrokerUnavailable, EventBroker, channel_for
+from app.realtime.state import RealtimeState
 from tests.api.v1.streaming import Stream
 {%- if rbac or tenancy %}
 from tests.conftest import {% if rbac %}LoginClient, {% endif %}MakeUser
@@ -62,6 +70,26 @@ def channel(tenant: Tenant) -> str:
 @pytest.fixture
 def channel() -> str:
     return channel_for(None)
+{%- endif %}
+
+
+{%- if auth %}
+
+
+@pytest.fixture
+def sessions(
+    application: FastAPI, maker: async_sessionmaker[AsyncSession]
+) -> list[AsyncSession]:
+    """Every database session the app opens for a request, to see which are still in use."""
+    opened: list[AsyncSession] = []
+
+    async def tracked() -> AsyncIterator[AsyncSession]:
+        async with maker() as session:
+            opened.append(session)
+            yield session
+
+    application.dependency_overrides[get_session] = tracked
+    return opened
 {%- endif %}
 
 
@@ -361,4 +389,54 @@ async def test_system_tenant_superuser_does_not_see_tenant_events(
         await create(client, "tenant-data")
         with pytest.raises(TimeoutError):
             await stream.next_frame(QUIET)
+{%- endif %}
+
+
+@pytest.mark.usefixtures("fast_heartbeat")
+async def test_closing_ends_an_open_stream(application: FastAPI, client: AsyncClient) -> None:
+    async with Stream(application, client, EVENTS) as stream:
+        assert await stream.next_frame() == ": keepalive\n\n"
+
+        application.state.realtime.closing.set()
+
+        async def drain() -> None:
+            while await stream.next_frame() is not None:
+                pass
+
+        # Whatever is still in flight, the stream ends by itself, promptly.
+        await asyncio.wait_for(drain(), 2)
+        await stream.ended()
+
+
+async def test_too_many_streams_is_503_with_retry_after_and_slots_are_released(
+    application: FastAPI, client: AsyncClient
+) -> None:
+    application.state.realtime = RealtimeState(1)
+
+    async with Stream(application, client, EVENTS) as first:
+        assert first.status == 200
+        async with Stream(application, client, EVENTS) as second:
+            assert second.status == 503
+            assert second.headers["retry-after"] == "5"
+            assert json.loads(await second.body())["code"] == "too_many_connections"
+    assert application.state.realtime.active == 0
+
+    # A request refused before streaming (bad id) gives its slot back too.
+    async with Stream(application, client, EVENTS, headers={"Last-Event-ID": "x"}) as bad:
+        assert bad.status == 400
+    assert application.state.realtime.active == 0
+    async with Stream(application, client, EVENTS) as again:
+        assert again.status == 200
+{%- if auth %}
+
+
+@pytest.mark.usefixtures("fast_heartbeat")
+async def test_an_idle_stream_holds_no_database_session(
+    application: FastAPI, client: AsyncClient, sessions: list[AsyncSession]
+) -> None:
+    async with Stream(application, client, EVENTS) as stream:
+        assert await stream.next_frame() == ": keepalive\n\n"
+
+        assert sessions, "authentication should have used a session"
+        assert [s for s in sessions if s.in_transaction()] == []
 {%- endif %}
