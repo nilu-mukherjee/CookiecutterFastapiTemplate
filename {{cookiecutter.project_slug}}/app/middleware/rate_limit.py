@@ -15,6 +15,10 @@ class RateLimiter(Protocol):
         """Register a request for `key`; True means it is allowed."""
         ...
 
+    async def retry_after(self, key: str) -> int:
+        """Whole seconds until the key's window resets (minimum 1)."""
+        ...
+
 
 class InMemoryRateLimiter:
     """Fixed 60 second window per key. Per-process; use a shared store to scale out."""
@@ -28,7 +32,7 @@ class InMemoryRateLimiter:
         self._windows: dict[str, tuple[float, int]] = {}
         self._next_sweep = 0.0
 
-    def retry_after(self, key: str) -> int:
+    async def retry_after(self, key: str) -> int:
         entry = self._windows.get(key)
         if entry is None:
             return 1
@@ -69,9 +73,7 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        retry_after = 1
-        if isinstance(self.limiter, InMemoryRateLimiter):
-            retry_after = self.limiter.retry_after(key)
+        retry_after = await self.limiter.retry_after(key)
         response = JSONResponse(
             {
                 "code": "rate_limited",

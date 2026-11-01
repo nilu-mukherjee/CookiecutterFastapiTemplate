@@ -38,3 +38,42 @@ async def test_in_memory_limiter_window_and_eviction() -> None:
     now[0] += 61
     assert await limiter.hit("a")
     assert len(limiter._windows) == 1  # expired "b" evicted opportunistically
+
+
+async def test_retry_after_header_matches_remaining_window_seconds() -> None:
+    from starlette.applications import Starlette
+
+    from app.middleware.rate_limit import RateLimitMiddleware
+    from tests.middleware.conftest import client_for
+
+    now = [1000.0]
+    limiter = InMemoryRateLimiter(1, clock=lambda: now[0])
+    app = Starlette()
+    app.add_middleware(RateLimitMiddleware, limiter=limiter)
+    async with client_for(app) as c:  # type: ignore[arg-type]
+        assert (await c.get("/x")).status_code == 404
+        now[0] += 20
+        r = await c.get("/x")
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "40"
+
+
+async def test_middleware_depends_only_on_protocol() -> None:
+    from starlette.applications import Starlette
+
+    from app.middleware.rate_limit import RateLimitMiddleware
+    from tests.middleware.conftest import client_for
+
+    class Stub:
+        async def hit(self, key: str) -> bool:
+            return False
+
+        async def retry_after(self, key: str) -> int:
+            return 7
+
+    app = Starlette()
+    app.add_middleware(RateLimitMiddleware, limiter=Stub())
+    async with client_for(app) as c:  # type: ignore[arg-type]
+        r = await c.get("/x")
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "7"
