@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 {%- endif %}
     cors_origins: list[str] = []
     allowed_hosts: list[str] = ["*"]
+    rate_limit_per_minute: int = 120
 
 
 @lru_cache

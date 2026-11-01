@@ -5,6 +5,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.middleware.request_id import request_id_var
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,8 +19,8 @@ class AppError(Exception):
 
 
 def _body(request: Request, code: str, detail: str) -> dict[str, str | None]:
-    # request_id is populated by the request-id middleware once it is installed.
-    request_id = getattr(request.state, "request_id", None)
+    # Set by RequestIdMiddleware in scope state (shared with mounted sub-apps).
+    request_id = getattr(request.state, "request_id", None) or request_id_var.get()
     return {"code": code, "detail": detail, "request_id": request_id}
 
 
