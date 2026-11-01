@@ -3,13 +3,25 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.core.config import get_settings
+{% if cookiecutter.use_redis == "y" %}from app.cache.redis import get_redis
+{% endif %}from app.core.config import get_settings
 from app.middleware.access_log import AccessLogMiddleware
 from app.middleware.deprecation import DeprecationMiddleware
-from app.middleware.rate_limit import InMemoryRateLimiter, RateLimitMiddleware
-from app.middleware.request_id import RequestIdMiddleware
+{% if cookiecutter.use_redis == "y" %}from app.middleware.rate_limit import RateLimiter, RateLimitMiddleware
+from app.middleware.rate_limit_redis import RedisRateLimiter
+{% else %}from app.middleware.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitMiddleware
+{% endif %}from app.middleware.request_id import RequestIdMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.timing import TimingMiddleware
+
+
+def build_rate_limiter() -> RateLimiter:
+    settings = get_settings()
+{%- if cookiecutter.use_redis == "y" %}
+    return RedisRateLimiter(get_redis(), settings.rate_limit_per_minute)
+{%- else %}
+    return InMemoryRateLimiter(settings.rate_limit_per_minute)
+{%- endif %}
 
 
 def register_middleware(app: FastAPI) -> None:
@@ -25,10 +37,7 @@ def register_middleware(app: FastAPI) -> None:
     origins = settings.cors_origins
 
     app.add_middleware(DeprecationMiddleware)
-    app.add_middleware(
-        RateLimitMiddleware,
-        limiter=InMemoryRateLimiter(settings.rate_limit_per_minute),
-    )
+    app.add_middleware(RateLimitMiddleware, limiter=build_rate_limiter())
     if not is_dev:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.add_middleware(GZipMiddleware, minimum_size=1000)

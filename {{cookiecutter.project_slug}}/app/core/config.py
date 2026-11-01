@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = []
     allowed_hosts: list[str] = ["*"]
     rate_limit_per_minute: int = 120
+{%- if cookiecutter.use_redis == "y" %}
+    redis_url: str = "redis://localhost:6379/0"
+{%- endif %}
 
 
 @lru_cache

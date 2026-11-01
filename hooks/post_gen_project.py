@@ -18,6 +18,11 @@ FLAGS: dict[str, object] = json.loads(r"""{{ cookiecutter | jsonify }}""")
 PRUNE: dict[str | tuple[str, ...], list[str]] = {
     "use_docker": ["Dockerfile", "docker-compose.yml", ".dockerignore"],
     "use_github_actions": [".github"],
+    "use_redis": [
+        "app/cache",
+        "app/middleware/rate_limit_redis.py",
+        "tests/middleware/test_rate_limit_redis.py",
+    ],
 }
 
 

@@ -1,11 +1,15 @@
 from collections.abc import AsyncIterator
 
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+{% if cookiecutter.use_redis == "y" %}import pytest
+{% endif %}import pytest_asyncio
+{% if cookiecutter.use_redis == "y" %}from fakeredis import FakeServer
+from fakeredis.aioredis import FakeRedis
+{% endif %}from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-import app.models.item  # noqa: F401  (register tables on Base.metadata)
+{% if cookiecutter.use_redis == "y" %}import app.cache.redis as redis_module
+{% endif %}import app.models.item  # noqa: F401  (register tables on Base.metadata)
 from app.db.session import get_session
 from app.main import create_app
 from app.models.base import Base
@@ -32,3 +36,15 @@ async def client(maker: async_sessionmaker[AsyncSession]) -> AsyncIterator[Async
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+{%- if cookiecutter.use_redis == "y" %}
+
+
+@pytest.fixture(autouse=True)
+def fake_redis(monkeypatch: pytest.MonkeyPatch) -> FakeServer:
+    """Every test gets its own in-process Redis; get_redis() returns it."""
+    server = FakeServer()
+    monkeypatch.setattr(
+        redis_module, "_client", FakeRedis(server=server, decode_responses=True)
+    )
+    return server
+{%- endif %}
