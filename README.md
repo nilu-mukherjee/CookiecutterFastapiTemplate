@@ -9,13 +9,13 @@
 
 ## ✨ Features
 
-* **Pick your stack**: a database choice and 20 yes/no flags decide what is generated. Code for a feature you turn off is not in the project at all, so there is nothing to delete later.
+* **Pick your stack**: a database choice and 20 yes/no flags decide what is generated. Code for a feature you turn off is never generated, so there is nothing to delete later.
 * **Five authentication methods**: JWT Bearer, JWT in an HttpOnly cookie, server-side sessions, API keys and HTTP Basic, with CSRF protection for the cookie methods. Enable any combination.
 * **Authorization and tenancy**: optional roles and permissions, and optional shared-schema multi-tenancy where repositories filter by tenant on every query.
 * **Realtime item events**: Server-Sent Events, long polling, WebSocket and GraphQL subscriptions share one event broker, in memory or on Redis Streams.
 * **gRPC**: an `items.v1` service with committed, drift-tested stubs, served by its own process and authenticated with Bearer tokens or API keys.
 * **GraphQL**: queries and mutations over the same item service, with the same authentication, permissions and tenant scoping as REST.
-* **Checked on every build**: the template ships a script that generates a project and runs ruff, mypy and pytest on it.
+* **Tested combinations**: the template ships scripts that generate projects for 21 flag combinations and run ruff, mypy and pytest on each, and confirm that 9 invalid combinations are refused.
 
 ## 📦 Installation
 
@@ -177,7 +177,7 @@ uv run python scripts/check_project.py --preset full
 uv run python scripts/check_project.py --preset minimal use_websocket=y
 ```
 
-`check_project.py` accepts `key=value` overrides after the preset, so any flag combination can be checked.
+`check_project.py` accepts `key=value` overrides after the preset, so any flag combination can be checked. `uv run python scripts/check_matrix.py` runs the whole set of combinations (slow; pass `--only <text>` to pick some, or `--list` to see them). Without Docker installed, the `docker compose` checks are skipped.
 
 ## 🤝 Contributing
 
