@@ -4,6 +4,7 @@
 Usage: python scripts/check_project.py [--preset minimal|full|NAME] [key=value ...]
 """
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -25,9 +26,9 @@ PRESETS = {
 }
 
 
-def run(cmd: list[str], cwd: Path) -> None:
+def run(cmd: list[str], cwd: Path, env: dict[str, str] | None = None) -> None:
     print(f"$ {' '.join(cmd)}", flush=True)
-    subprocess.run(cmd, cwd=cwd, check=True)
+    subprocess.run(cmd, cwd=cwd, check=True, env=env)
 
 
 def main() -> int:
@@ -72,6 +73,18 @@ def main() -> int:
         run([uv, "run", "--python", py, "ruff", "check", "."], project)
         run([uv, "run", "--python", py, "mypy", "app"], project)
         run([uv, "run", "--python", py, "pytest", "-q"], project)
+        run([uv, "run", "--python", py, "python", "-m", "scripts.export_openapi"], project)
+        for name in ("openapi-v1.json", "openapi-v2.json"):
+            if not (project / "docs" / "openapi" / name).is_file():
+                print(f"FAILED: {name} was not written", file=sys.stderr)
+                return 1
+        if (project / "docker-compose.yml").exists():
+            if shutil.which("docker"):
+                # The values compose insists on; any non-empty text passes `config`.
+                env = {**os.environ, "SECRET_KEY": "x" * 40, "FLOWER_BASIC_AUTH": "admin:x"}
+                run(["docker", "compose", "config", "-q"], project, env)
+            else:
+                print("NOTICE: docker not found; skipping `docker compose config`")
     except subprocess.CalledProcessError as e:
         print(f"FAILED: {e}", file=sys.stderr)
         return e.returncode or 1

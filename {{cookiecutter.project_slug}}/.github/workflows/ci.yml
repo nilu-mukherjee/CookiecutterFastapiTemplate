@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python {{ cookiecutter.python_version }}
+      - run: uv run ruff check .
+      - run: uv run mypy app
+      - run: uv run pytest
+      # The committed schemas must match the code. Untracked files count as drift too.
+      - run: make openapi
+      - run: test -z "$(git status --porcelain docs/openapi)" || { git status --short docs/openapi; git diff docs/openapi; exit 1; }

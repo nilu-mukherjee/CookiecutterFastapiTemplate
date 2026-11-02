@@ -696,7 +696,7 @@ def test_grpc_off_leaves_no_grpc_code(tmp_path):
     r = gen(tmp_path, use_grpc="n")
     assert r.returncode == 0, r.stderr
     proj = tmp_path / "my_project"
-    for rel in [*GRPC_PATHS, "proto", "app/grpc", "tests/grpc", "scripts"]:
+    for rel in [*GRPC_PATHS, "proto", "app/grpc", "tests/grpc", "scripts/gen_proto.py"]:
         assert not (proj / rel).exists(), rel
     scan(proj, ("grpc", "protobuf", "items_pb2", "gen_proto"))
 

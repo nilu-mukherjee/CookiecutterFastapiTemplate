@@ -178,10 +178,6 @@ def main() -> None:
         if is_off(key):
             for rel in paths:
                 remove(root / rel)
-    # A directory emptied by pruning is not worth keeping.
-    scripts = root / "scripts"
-    if scripts.is_dir() and not any(scripts.iterdir()):
-        scripts.rmdir()
     if shutil.which("git"):
         subprocess.run(["git", "init", "-q"], check=False)
 

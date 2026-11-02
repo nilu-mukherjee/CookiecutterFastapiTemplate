@@ -1,0 +1,174 @@
+{%- set auth = cookiecutter.use_auth == "y" -%}
+{%- set db = cookiecutter.database -%}
+{%- set redis = cookiecutter.use_redis == "y" -%}
+{%- set celery = cookiecutter.use_celery == "y" -%}
+{%- set grpc = cookiecutter.use_grpc == "y" -%}
+{%- set infra = db != "sqlite" or redis or celery -%}
+# Development stack. The database and broker use fixed local credentials and are only
+# published on 127.0.0.1; set real ones before exposing any of this. Settings that are
+# not listed here come from .env.
+x-app: &app
+  build: .
+  image: {{ cookiecutter.project_slug }}
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    ENVIRONMENT: ${ENVIRONMENT:-dev}
+{%- if db == "postgresql" %}
+    DATABASE_URL: postgresql+asyncpg://app:app@db:5432/app
+{%- elif db == "mysql" %}
+    DATABASE_URL: mysql+aiomysql://app:app@db:3306/app
+{%- else %}
+    DATABASE_URL: sqlite+aiosqlite:////data/app.db
+{%- endif %}
+{%- if redis %}
+    REDIS_URL: redis://redis:6379/0
+{%- endif %}
+{%- if celery %}
+    CELERY_BROKER_URL: amqp://app:app@rabbitmq:5672//
+{%- if redis %}
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+{%- endif %}
+{%- endif %}
+{%- if auth %}
+    SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+{%- endif %}
+{%- if grpc %}
+    GRPC_PORT: ${GRPC_PORT:-50051}
+{%- endif %}
+{%- if db == "sqlite" %}
+  volumes:
+    - app-data:/data
+{%- endif %}
+{%- if infra %}
+  depends_on:
+{%- if db != "sqlite" %}
+    db:
+      condition: service_healthy
+{%- endif %}
+{%- if redis %}
+    redis:
+      condition: service_healthy
+{%- endif %}
+{%- if celery %}
+    rabbitmq:
+      condition: service_healthy
+{%- endif %}
+{%- endif %}
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *app
+    # Migrations run on every start. With several replicas, run `alembic upgrade head`
+    # once as a separate job instead.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health/live')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+{%- if grpc %}
+
+  grpc:
+    <<: *app
+    command: python -m app.grpc.server
+    ports:
+      - "${GRPC_PORT:-50051}:${GRPC_PORT:-50051}"
+    # The API applies the migrations.
+    depends_on:
+      api:
+        condition: service_healthy
+{%- endif %}
+{%- if celery %}
+
+  worker:
+    <<: *app
+    command: celery -A app.worker.celery_app worker --loglevel=info
+{%- if cookiecutter.use_celery_beat == "y" %}
+
+  beat:
+    <<: *app
+    command: celery -A app.worker.celery_app beat --loglevel=info
+{%- endif %}
+{%- if cookiecutter.use_flower == "y" %}
+
+  flower:
+    <<: *app
+    # user:password, required: compose refuses to start without it.
+    command: celery -A app.worker.celery_app flower --port=5555 --basic-auth=${FLOWER_BASIC_AUTH:?Set FLOWER_BASIC_AUTH to user:password in .env}
+    ports:
+      - "127.0.0.1:5555:5555"
+{%- endif %}
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: app
+      RABBITMQ_DEFAULT_PASS: app
+    ports:
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+{%- endif %}
+{%- if redis %}
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+{%- endif %}
+{%- if db == "postgresql" %}
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app", "-d", "app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+{%- elif db == "mysql" %}
+
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: app
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uapp", "-papp"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+{%- endif %}
+
+volumes:
+{%- if db == "sqlite" %}
+  app-data:
+{%- else %}
+  db-data:
+{%- endif %}

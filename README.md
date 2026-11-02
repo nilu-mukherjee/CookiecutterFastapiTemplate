@@ -97,8 +97,8 @@ Flags default to `y`. `project_slug` is derived from `project_name`.
 | `author`, `author_email` | text | Written to the project metadata. |
 | `python_version` | `3.12`, `3.13` | Minimum Python version of the generated project. |
 | `database` | `postgresql`, `mysql`, `sqlite` | Picks the driver (asyncpg, aiomysql, aiosqlite) and the default `DATABASE_URL`. |
-| `use_docker` | `y`, `n` | Not built yet. The flag exists but generates nothing. |
-| `use_github_actions` | `y`, `n` | Not built yet. The flag exists but generates nothing. |
+| `use_docker` | `y`, `n` | `Dockerfile` and a `docker-compose.yml` with only the services your flags need (API, database, Redis, RabbitMQ, worker, beat, Flower, gRPC). Compose refuses to start without `SECRET_KEY` (when auth is on) and `FLOWER_BASIC_AUTH` (when Flower is on). |
+| `use_github_actions` | `y`, `n` | A CI workflow that runs ruff, mypy and pytest, then fails if `docs/openapi` is out of date. |
 | `use_auth` | `y`, `n` | Needs at least one auth method. With `n` all routes are public and the method flags are ignored. |
 | `use_auth_jwt_bearer` | `y`, `n` | Needs `use_auth`. Access and refresh tokens in the `Authorization` header. |
 | `use_auth_jwt_cookie` | `y`, `n` | Needs `use_auth`. The same tokens in HttpOnly cookies, with CSRF protection. |
@@ -116,7 +116,7 @@ Flags default to `y`. `project_slug` is derived from `project_name`.
 | `use_grpc` | `y`, `n` | gRPC item service in its own process. With `use_auth` it needs Bearer or API key auth, because gRPC calls cannot carry cookies, sessions or Basic. |
 | `use_celery` | `y`, `n` | Celery worker with RabbitMQ as the broker. |
 | `use_celery_beat` | `y`, `n` | Needs `use_celery`. Periodic task scheduler. |
-| `use_flower` | `y`, `n` | Needs `use_celery`. Declares the Flower dashboard credentials setting. The Flower service itself arrives with Docker support. |
+| `use_flower` | `y`, `n` | Needs `use_celery`. Adds the `flower` package. With Docker, a compose service on `127.0.0.1:5555` behind the `user:password` in `FLOWER_BASIC_AUTH`; there is no default login. |
 
 An invalid combination, such as `use_rbac=y` with `use_auth=n`, stops generation with an error that names the missing flag.
 

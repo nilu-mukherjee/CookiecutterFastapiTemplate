@@ -26,6 +26,9 @@ dependencies = [
 {%- if cookiecutter.use_celery == "y" %}
     "celery>=5.4",
 {%- endif %}
+{%- if cookiecutter.use_flower == "y" %}
+    "flower>=2.0",
+{%- endif %}
 {%- if cookiecutter.use_grpc == "y" %}
     # The committed stubs in app/grpc/generated were generated with grpcio-tools 1.85.1
     # (protobuf 7.35.1) and refuse to import with anything older.
