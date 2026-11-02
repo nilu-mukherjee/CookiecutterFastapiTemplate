@@ -191,4 +191,4 @@ Contributions are welcome. Run the checks above before opening a pull request.
 
 ## 📄 License
 
-Distributed under the MIT License.
+Distributed under the MIT License. See [LICENSE](LICENSE).
