@@ -19,29 +19,27 @@
 
 ## 📦 Installation
 
-You need Python 3.12 or newer and [uv](https://docs.astral.sh/uv/) for the generated project.
+You need Python 3.12 or newer and [uv](https://docs.astral.sh/uv/) for the generated project. Generate projects with [cruft](https://cruft.github.io/cruft/), which wraps cookiecutter and records the template version in the project so you can update it later.
 
 ```bash
-# Straight from GitHub
-pipx run cookiecutter gh:nilu-mukherjee/CookiecutterFastapiTemplate
+pipx install cruft        # or: uv tool install cruft
 
-# Or from a local clone
-git clone https://github.com/nilu-mukherjee/CookiecutterFastapiTemplate.git
-pipx run cookiecutter CookiecutterFastapiTemplate
+cruft create https://github.com/nilu-mukherjee/CookiecutterFastapiTemplate.git
 ```
 
-Cookiecutter asks for each variable in the table below. Pass `--no-input` and `key=value` pairs to skip the prompts.
+Cruft asks for each variable in the table below. To skip the prompts, pass `-y` and the values you want to change as JSON in `--extra-context`. Everything you leave out keeps its default. Plain cookiecutter works too: `pipx run cookiecutter gh:nilu-mukherjee/CookiecutterFastapiTemplate`, with `key=value` pairs after `--no-input`.
 
 ## 🚀 Quick start
 
 This generates a small API with Bearer login, RBAC, SSE and long polling on SQLite, then runs it.
 
 ```bash
-pipx run cookiecutter CookiecutterFastapiTemplate --no-input \
-  project_name="Orders API" database=sqlite \
-  use_auth_jwt_cookie=n use_auth_session=n use_auth_api_key=n use_auth_basic=n \
-  use_social_login=n use_multitenancy=n use_redis=n use_websocket=n \
-  use_celery=n use_celery_beat=n use_flower=n use_graphql=n use_grpc=n
+cruft create https://github.com/nilu-mukherjee/CookiecutterFastapiTemplate.git -y \
+  --extra-context '{"project_name": "Orders API", "database": "sqlite",
+    "use_auth_jwt_cookie": "n", "use_auth_session": "n", "use_auth_api_key": "n",
+    "use_auth_basic": "n", "use_social_login": "n", "use_multitenancy": "n",
+    "use_redis": "n", "use_websocket": "n", "use_celery": "n", "use_celery_beat": "n",
+    "use_flower": "n", "use_graphql": "n", "use_grpc": "n"}'
 
 cd orders_api
 uv sync
@@ -51,6 +49,10 @@ uv run uvicorn app.main:app --reload
 ```
 
 The API is at <http://localhost:8000>. Interactive docs for each API version are at `/api/v1/docs` and `/api/v2/docs`, and health checks are at `/health/live` and `/health/ready`. Run the project's own checks with `uv run pytest`, `uv run ruff check .` and `uv run mypy app`.
+
+### Updating a generated project
+
+Cruft stores the template URL, commit and your answers in `.cruft.json`. Inside the project, `cruft check` tells you whether the template has moved on, and `cruft update` applies the template changes as a diff you can review. Commit `.cruft.json` with the project.
 
 ### Realtime events
 

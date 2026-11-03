@@ -24,7 +24,7 @@ W, H, FPS, SIZE, BAR = 1280, 720, 24, 24, 48
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 COLORS = dict(bg="#000000", bar="#1c1c1c", fg="#ffffff", dim="#9a9a9a")
 CARD = 1.6  # seconds the intro card (what the option does) stays on screen
-PROMPT = "~/cookiecutter $ "
+PROMPT = "~ $ "
 
 FLAGS = [
     "use_docker", "use_github_actions", "use_auth", "use_auth_jwt_bearer", "use_auth_jwt_cookie",
@@ -163,14 +163,10 @@ def card(title, lines, fonts):
 
 
 def render(events, t, font, line_h, cols):
-    img = Image.new("RGB", (W, H), COLORS["bg"])
-    d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W, BAR], fill=COLORS["bar"])
-    for i, c in enumerate(("#f38ba8", "#f9e2af", "#a6e3a1")):
-        d.ellipse([20 + i * 28, 16, 36 + i * 28, 32], fill=c)
-    d.text((W / 2, BAR / 2), "nilu@dev: ~/CookiecutterFastapiTemplate", font=font,
-           fill=COLORS["dim"], anchor="mm")
-    cw, y, x_cursor, y_cursor = font.getlength("M"), BAR + 24, 40, BAR + 24
+    """Draw the terminal on a tall canvas and crop the bottom, so long sessions scroll."""
+    canvas = Image.new("RGB", (W, H * 4), COLORS["bg"])
+    d = ImageDraw.Draw(canvas)
+    cw, y, x_cursor, y_cursor = font.getlength("M"), 24, 40, 24
     for kind, frames in events:
         if t < frames[0][0]:
             break
@@ -191,6 +187,15 @@ def render(events, t, font, line_h, cols):
         y += line_h
     if int(t * 2) % 2 == 0 or t < 1:  # blinking block cursor
         d.rectangle([x_cursor, y_cursor + 2, x_cursor + cw, y_cursor + line_h - 4], fill=COLORS["fg"])
+    view = H - BAR
+    top = max(0, y_cursor + line_h + 24 - view)
+    img = Image.new("RGB", (W, H), COLORS["bg"])
+    img.paste(canvas.crop((0, top, W, top + view)), (0, BAR))
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, BAR], fill=COLORS["bar"])
+    for i, c in enumerate(("#f38ba8", "#f9e2af", "#a6e3a1")):
+        d.ellipse([20 + i * 28, 16, 36 + i * 28, 32], fill=c)
+    d.text((W / 2, BAR / 2), "nilu@dev: ~", font=font, fill=COLORS["dim"], anchor="mm")
     return np.asarray(img)
 
 
