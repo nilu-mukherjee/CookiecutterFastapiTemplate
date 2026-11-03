@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 
-![Generating a project with cruft create](Animation.gif)
+![Generating a project with the template](Animation.gif)
 
 ---
 
@@ -21,27 +21,27 @@
 
 ## 📦 Installation
 
-You need Python 3.12 or newer and [uv](https://docs.astral.sh/uv/) for the generated project. Generate projects with [cruft](https://cruft.github.io/cruft/), which wraps cookiecutter and records the template version in the project so you can update it later.
+You need Python 3.12 or newer and [uv](https://docs.astral.sh/uv/) for the generated project, plus [cookiecutter](https://github.com/cookiecutter/cookiecutter) to generate it.
 
 ```bash
-pipx install cruft        # or: uv tool install cruft
+pipx install cookiecutter        # or: uv tool install cookiecutter
 
-cruft create https://github.com/nilu-mukherjee/CookiecutterFastapiTemplate.git
+cookiecutter https://github.com/nilu-mukherjee/CookiecutterFastapiTemplate.git
 ```
 
-Cruft asks for each variable in the table below. To skip the prompts, pass `-y` and the values you want to change as JSON in `--extra-context`. Everything you leave out keeps its default. Plain cookiecutter works too: `pipx run cookiecutter gh:nilu-mukherjee/CookiecutterFastapiTemplate`, with `key=value` pairs after `--no-input`.
+Cookiecutter asks for each variable in the table below. To skip the prompts, pass `--no-input` and the values you want to change as `key=value` pairs. Everything you leave out keeps its default.
 
 ## 🚀 Quick start
 
 This generates a small API with Bearer login, RBAC, SSE and long polling on SQLite, then runs it.
 
 ```bash
-cruft create https://github.com/nilu-mukherjee/CookiecutterFastapiTemplate.git -y \
-  --extra-context '{"project_name": "Orders API", "database": "sqlite",
-    "use_auth_jwt_cookie": "n", "use_auth_session": "n", "use_auth_api_key": "n",
-    "use_auth_basic": "n", "use_social_login": "n", "use_multitenancy": "n",
-    "use_redis": "n", "use_websocket": "n", "use_celery": "n", "use_celery_beat": "n",
-    "use_flower": "n", "use_graphql": "n", "use_grpc": "n"}'
+cookiecutter https://github.com/nilu-mukherjee/CookiecutterFastapiTemplate.git --no-input \
+  project_name="Orders API" database=sqlite \
+  use_auth_jwt_cookie=n use_auth_session=n use_auth_api_key=n \
+  use_auth_basic=n use_social_login=n use_multitenancy=n \
+  use_redis=n use_websocket=n use_celery=n use_celery_beat=n \
+  use_flower=n use_graphql=n use_grpc=n
 
 cd orders_api
 uv sync
@@ -51,10 +51,6 @@ uv run uvicorn app.main:app --reload
 ```
 
 The API is at <http://localhost:8000>. Interactive docs for each API version are at `/api/v1/docs` and `/api/v2/docs`, and health checks are at `/health/live` and `/health/ready`. Run the project's own checks with `uv run pytest`, `uv run ruff check .` and `uv run mypy app`.
-
-### Updating a generated project
-
-Cruft stores the template URL, commit and your answers in `.cruft.json`. Inside the project, `cruft check` tells you whether the template has moved on, and `cruft update` applies the template changes as a diff you can review. Commit `.cruft.json` with the project.
 
 ### Realtime events
 
