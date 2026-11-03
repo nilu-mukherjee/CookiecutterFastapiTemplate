@@ -1,4 +1,4 @@
-"""Render one full walkthrough video: cruft create from GitHub, run the API, cruft check.
+"""Render one full walkthrough video: cookiecutter from GitHub, answer the prompts, run the API.
 
 Every output line below was captured from a real run of these commands (see the
 README quick start). The typing is animated at a slow, human pace.
@@ -22,13 +22,25 @@ LS = ["alembic          app          Dockerfile   proto           scripts",
       "alembic.ini      docker-compose.yml  Makefile     pyproject.toml  tests",
       "README.md"]
 
+# The first prompts as cookiecutter prints them, with the answers typed. Enter keeps the default.
+PROMPTS = [
+    "  [1/26] project_name (My Project): Orders API",
+    "  [2/26] project_slug (orders_api):",
+    "  [3/26] author (Your Name):",
+    "  [4/26] author_email (you@example.com):",
+    "  [5/26] Select python_version",
+    "    1 - 3.12", "    2 - 3.13",
+    "    Choose from [1/2] (1):",
+    "  [6/26] Select database",
+    "    1 - postgresql", "    2 - mysql", "    3 - sqlite",
+    "    Choose from [1/2/3] (1): 3",
+    "# Enter accepts the default for the other 20 prompts",
+]
+
 # (command, output lines, seconds the command runs before output, seconds per output line, typing cap)
 STEPS = [
-    ("cruft create \\\n  " + URL + " \\\n  -y --extra-context '{\"project_name\": \"Orders API\", \"database\": \"sqlite\"}'",
-     [], 3.0, 0, 9.0),
+    ("cookiecutter " + URL, PROMPTS, 3.0, .35, 4.0),
     ("cd orders_api && ls", LS, .3, .12, 3.0),
-    ("head -4 .cruft.json", ["{", f'  "template": "{URL}",',
-                             '  "commit": "76459113817a5f6563ad5ac3a23a7fcf7e7acd47",', '  "checkout": null,'], .3, .12, 3.0),
     ("uv sync 2>&1 | tail -4", [" + vine==5.1.0", " + watchfiles==1.3.0", " + wcwidth==0.9.4",
                                 " + websockets==17.4"], 3.5, .12, 3.0),
     ("cp .env.example .env", [], .2, 0, 3.0),
@@ -40,7 +52,6 @@ STEPS = [
       "# in a second terminal"], 1.5, .25, 3.0),
     ("curl localhost:8766/health/live", ['{"status":"ok"}'], .3, 0, 3.0),
     ("curl -i localhost:8766/api/v1/items | head -1", ["HTTP/1.1 401 Unauthorized"], .3, 0, 4.0),
-    ("cruft check", ["SUCCESS: Good work! Project's cruft is up to date and as clean as possible :)."], 1.5, 0, 3.0),
 ]
 
 
@@ -63,8 +74,8 @@ def main(path: Path) -> None:
     fonts = (ImageFont.truetype(m.FONT, 64), ImageFont.truetype(m.FONT, 28))
     line_h, cols = int(m.SIZE * 1.5), int((m.W - 80) / font.getlength("M"))
     events, duration = build()
-    intro = m.card("cruft create", ["Generate a project from the template on GitHub,",
-                                    "run it, then check it against the template"], fonts)
+    intro = m.card("cookiecutter", ["Generate a project from the template on GitHub,",
+                                  "answer the prompts, then run it"], fonts)
     clip = VideoClip(lambda t: intro if t < CARD else m.render(events, t, font, line_h, cols),
                      duration=duration)
     clip.write_videofile(str(path), fps=m.FPS, codec="libx264", logger=None)
