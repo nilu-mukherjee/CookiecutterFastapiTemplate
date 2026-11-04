@@ -5,6 +5,7 @@ install:
 	uv sync
 
 run:
+	-fuser -k 8001/tcp 2>/dev/null
 	uv run uvicorn app.main:app --reload --port 8001
 
 test:
