@@ -88,7 +88,7 @@ Without `use_redis` the broker lives in the process, so events reach only client
 
 ### Template variables
 
-Flags default to `y`. `project_slug` is derived from `project_name`.
+Flags default to `y`, except `use_grpc` which defaults to `n`. `project_slug` is derived from `project_name`.
 
 | Variable | Choices | Requires or effect |
 | :--- | :--- | :--- |
@@ -113,7 +113,7 @@ Flags default to `y`. `project_slug` is derived from `project_name`.
 | `use_long_polling` | `y`, `n` | Long polling endpoint. |
 | `use_websocket` | `y`, `n` | WebSocket endpoint. |
 | `use_graphql` | `y`, `n` | Strawberry GraphQL at `/graphql`, with a subscription when a realtime flag is on. |
-| `use_grpc` | `y`, `n` | gRPC item service in its own process. With `use_auth` it needs Bearer or API key auth, because gRPC calls cannot carry cookies, sessions or Basic. |
+| `use_grpc` | `n`, `y` | gRPC item service in its own process. Defaults to `n` because it requires Bearer or API key auth when `use_auth` is on — gRPC calls cannot carry cookies, sessions or Basic. |
 | `use_celery` | `y`, `n` | Celery worker with RabbitMQ as the broker. |
 | `use_celery_beat` | `y`, `n` | Needs `use_celery`. Periodic task scheduler. |
 | `use_flower` | `y`, `n` | Needs `use_celery`. Adds the `flower` package. With Docker, a compose service on `127.0.0.1:5555` behind the `user:password` in `FLOWER_BASIC_AUTH`; there is no default login. |

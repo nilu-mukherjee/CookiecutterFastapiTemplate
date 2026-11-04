@@ -564,7 +564,9 @@ def test_protocol_flags_are_cookiecutter_choices_defaulting_to_y():
     context = json.loads((ROOT / "cookiecutter.json").read_text())
     keys = list(context)
     for flag in NEW_PROTOCOL_FLAGS:
-        assert context[flag] == ["y", "n"], flag
+        # use_grpc defaults to n because it has a strict auth requirement (Bearer or API key only).
+        expected = ["n", "y"] if flag == "use_grpc" else ["y", "n"]
+        assert context[flag] == expected, flag
     # Placed right after use_redis, in this order.
     start = keys.index("use_redis") + 1
     assert keys[start:start + len(NEW_PROTOCOL_FLAGS)] == list(NEW_PROTOCOL_FLAGS)

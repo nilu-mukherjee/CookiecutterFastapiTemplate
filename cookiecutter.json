@@ -21,7 +21,7 @@
   "use_long_polling": ["y", "n"],
   "use_websocket": ["y", "n"],
   "use_graphql": ["y", "n"],
-  "use_grpc": ["y", "n"],
+  "use_grpc": ["n", "y"],
   "use_celery": ["y", "n"],
   "use_celery_beat": ["y", "n"],
   "use_flower": ["y", "n"]
